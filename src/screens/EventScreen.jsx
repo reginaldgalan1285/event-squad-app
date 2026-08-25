@@ -264,7 +264,7 @@ export default function EventScreen({ session }) {
                       {count} players &middot; ₱{Number(r.amount).toLocaleString()}
                     </div>
                     {r.status === "pending_approval" ? (
-                      <div className="status-line paid"><Check size={12} /> Payment sent &middot; awaiting your approval</div>
+                      <div className="status-line paid"><Check size={12} /> Payment sent &middot; awaiting host approval</div>
                     ) : (
                       <div className="status-line waiting"><Clock size={12} /> Awaiting payment</div>
                     )}

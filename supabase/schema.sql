@@ -232,3 +232,10 @@ create policy "qr_upload_own_folder" on storage.objects
 create policy "qr_update_own_folder" on storage.objects
   for update to authenticated
   using (bucket_id = 'payment-qr' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Needed in addition to the insert/update policies above: upload with
+-- upsert:true checks for an existing object first, which requires a
+-- SELECT policy. "Public bucket" alone doesn't grant this.
+create policy "qr_select_public" on storage.objects
+  for select to public
+  using (bucket_id = 'payment-qr');
