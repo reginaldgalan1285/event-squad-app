@@ -22,6 +22,8 @@ export default function EventScreen({ session }) {
   const [priceDraft, setPriceDraft] = useState(0);
 
   const isHost = event?.host_id === session.user.id;
+  const isMember = members.some((m) => m.user_id === session.user.id);
+  const hasPendingRequest = requests.some((r) => r.user_id === session.user.id);
 
   const loadAll = useCallback(async () => {
     const { data: eventData } = await supabase.from("events").select("*").eq("id", eventId).single();
@@ -243,9 +245,11 @@ export default function EventScreen({ session }) {
             </>
           )}
 
-          <button className="dashed-join-btn" onClick={() => navigate(`/event/${eventId}/join`)}>
-            <UserPlus size={14} /> Another logged-in player joins
-          </button>
+          {!isMember && !hasPendingRequest && (
+            <button className="dashed-join-btn" onClick={() => navigate(`/event/${eventId}/join`)}>
+              <UserPlus size={14} /> Join this event
+            </button>
+          )}
         </div>
 
         <div className="total-bar">

@@ -35,7 +35,7 @@ export default function Discover() {
     setLoading(true);
     const { data } = await supabase
       .from("events")
-      .select("*, event_members(count)")
+      .select("*, event_members(id, guests(id))")
       .order("event_date", { ascending: true });
     setEvents(data || []);
     setLoading(false);
@@ -94,7 +94,10 @@ export default function Discover() {
             </div>
           ) : (
             dayEvents.map((e) => {
-              const confirmed = e.event_members?.[0]?.count ?? 0;
+              const confirmed = (e.event_members || []).reduce(
+                (sum, m) => sum + 1 + (m.guests?.length || 0),
+                0
+              );
               return (
                 <div key={e.id} className="meet-card" onClick={() => navigate(`/event/${e.id}`)}>
                   <div>
