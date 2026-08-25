@@ -66,6 +66,7 @@ export default function EventScreen({ session }) {
 
   async function handleSportChange(newSport) {
     await supabase.from("events").update({ sport: newSport }).eq("id", eventId);
+    await loadAll();
   }
 
   async function savePrice() {
@@ -73,6 +74,7 @@ export default function EventScreen({ session }) {
     await supabase.from("events").update({ price_per_player: Number(priceDraft) || 0 }).eq("id", eventId);
     setSavingPrice(false);
     setEditingPrice(false);
+    await loadAll();
   }
 
   async function addGuestTo(memberId, e) {
@@ -81,18 +83,22 @@ export default function EventScreen({ session }) {
     if (!trimmed) return;
     await supabase.from("guests").insert({ member_id: memberId, name: trimmed });
     setGuestInputs((g) => ({ ...g, [memberId]: "" }));
+    await loadAll();
   }
 
   async function removeGuest(guestId) {
     await supabase.from("guests").delete().eq("id", guestId);
+    await loadAll();
   }
 
   async function approveRequest(requestId) {
     await supabase.rpc("approve_payment_request", { request_id: requestId });
+    await loadAll();
   }
 
   async function declineRequest(requestId) {
     await supabase.from("payment_requests").update({ status: "declined" }).eq("id", requestId);
+    await loadAll();
   }
 
   async function handleSignOut() {

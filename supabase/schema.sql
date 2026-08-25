@@ -185,3 +185,11 @@ create index idx_payment_requests_status on payment_requests(status);
 -- max_players was added to events.
 -- ============================================================
 -- alter table events add column max_players int;
+
+-- ============================================================
+-- Enable Realtime on these tables. Without this, postgres_changes
+-- subscriptions in the app never fire, and other people's screens
+-- (e.g. the host watching a player add a guest) won't update live
+-- until they navigate away and back.
+-- ============================================================
+alter publication supabase_realtime add table events, event_members, guests, payment_requests;

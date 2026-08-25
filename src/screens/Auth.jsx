@@ -2,38 +2,76 @@ import { useState } from "react";
 import { supabase } from "../supabaseClient";
 
 export default function Auth() {
+  const [mode, setMode] = useState("signin"); // 'signin' | 'signup' | 'magic'
   const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
+  const [password, setPassword] = useState("");
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [sending, setSending] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!email.trim()) return;
-    setSending(true);
     setError("");
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: { emailRedirectTo: window.location.origin },
-    });
-    setSending(false);
-    if (error) {
-      setError(error.message);
-    } else {
-      setSent(true);
+    setMessage("");
+    if (!email.trim()) return;
+    setBusy(true);
+
+    if (mode === "magic") {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: { emailRedirectTo: window.location.origin },
+      });
+      setBusy(false);
+      if (error) setError(error.message);
+      else setMessage(`Check ${email} for a sign-in link, then come back to this tab.`);
+      return;
     }
+
+    if (!password) {
+      setBusy(false);
+      setError("Enter a password.");
+      return;
+    }
+
+    if (mode === "signup") {
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+      });
+      setBusy(false);
+      if (error) {
+        setError(error.message);
+      } else if (!data.session) {
+        setMessage(`Account created. Check ${email} to confirm it, then sign in.`);
+        setMode("signin");
+      }
+      // if data.session exists, onAuthStateChange in App.jsx picks it up automatically
+      return;
+    }
+
+    // signin
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    setBusy(false);
+    if (error) setError(error.message);
   }
 
   return (
     <div className="auth-wrap">
       <div className="auth-card">
         <div className="auth-title">Event Squad</div>
-        <div className="auth-sub">Sign in with your email to join or host an open play.</div>
+        <div className="auth-sub">
+          {mode === "signup"
+            ? "Create an account to host or join an open play."
+            : mode === "magic"
+            ? "Sign in with an emailed link — no password needed."
+            : "Sign in to host or join an open play."}
+        </div>
 
-        {sent ? (
-          <div style={{ fontSize: 13.5 }}>
-            Check <strong>{email}</strong> for a sign-in link, then come back to this tab.
-          </div>
+        {message ? (
+          <div style={{ fontSize: 13.5 }}>{message}</div>
         ) : (
           <form onSubmit={handleSubmit}>
             <div className="field-label">Email</div>
@@ -45,12 +83,57 @@ export default function Auth() {
               placeholder="you@example.com"
               required
             />
-            <button className="btn btn-primary btn-block" style={{ marginTop: 14 }} type="submit" disabled={sending}>
-              {sending ? "Sending link..." : "Send magic link"}
+
+            {mode !== "magic" && (
+              <>
+                <div className="field-label" style={{ marginTop: 14 }}>Password</div>
+                <input
+                  className="solid-input"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={mode === "signup" ? "At least 6 characters" : "Your password"}
+                  minLength={6}
+                  required
+                />
+              </>
+            )}
+
+            <button className="btn btn-primary btn-block" style={{ marginTop: 16 }} type="submit" disabled={busy}>
+              {busy
+                ? "Please wait..."
+                : mode === "signup"
+                ? "Create account"
+                : mode === "magic"
+                ? "Send magic link"
+                : "Sign in"}
             </button>
             {error && <div className="error-text">{error}</div>}
           </form>
         )}
+
+        <div style={{ marginTop: 18, fontSize: 12.5, display: "flex", flexDirection: "column", gap: 6 }}>
+          {mode === "signin" && (
+            <>
+              <button className="icon-btn" style={{ color: "var(--green)", fontWeight: 700 }} onClick={() => { setMode("signup"); setMessage(""); setError(""); }}>
+                Don't have an account? Create one
+              </button>
+              <button className="icon-btn" style={{ color: "var(--fade)" }} onClick={() => { setMode("magic"); setMessage(""); setError(""); }}>
+                Or email me a sign-in link instead
+              </button>
+            </>
+          )}
+          {mode === "signup" && (
+            <button className="icon-btn" style={{ color: "var(--green)", fontWeight: 700 }} onClick={() => { setMode("signin"); setMessage(""); setError(""); }}>
+              Already have an account? Sign in
+            </button>
+          )}
+          {mode === "magic" && (
+            <button className="icon-btn" style={{ color: "var(--green)", fontWeight: 700 }} onClick={() => { setMode("signin"); setMessage(""); setError(""); }}>
+              Use a password instead
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
