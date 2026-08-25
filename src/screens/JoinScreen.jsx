@@ -9,6 +9,7 @@ export default function JoinScreen({ session }) {
   const navigate = useNavigate();
 
   const [event, setEvent] = useState(null);
+  const [confirmedCount, setConfirmedCount] = useState(0);
   const [name, setName] = useState("");
   const [guests, setGuests] = useState([]);
   const [guestInput, setGuestInput] = useState("");
@@ -17,7 +18,14 @@ export default function JoinScreen({ session }) {
 
   useEffect(() => {
     supabase.from("events").select("*").eq("id", eventId).single().then(({ data }) => setEvent(data));
+    loadConfirmedCount();
   }, [eventId]);
+
+  async function loadConfirmedCount() {
+    const { data } = await supabase.from("event_members").select("id, guests(id)").eq("event_id", eventId);
+    const count = (data || []).reduce((sum, m) => sum + 1 + (m.guests?.length || 0), 0);
+    setConfirmedCount(count);
+  }
 
   function addGuest(e) {
     e.preventDefault();
@@ -34,6 +42,9 @@ export default function JoinScreen({ session }) {
   const price = Number(event?.price_per_player || 0);
   const playerCount = 1 + guests.length;
   const amount = playerCount * price;
+  const hasLimit = event?.max_players != null;
+  const spotsLeft = hasLimit ? event.max_players - confirmedCount - playerCount : null;
+  const atCapacity = hasLimit && spotsLeft <= 0;
 
   async function requestToJoin() {
     if (!name.trim()) return;
@@ -90,10 +101,24 @@ export default function JoinScreen({ session }) {
           ))}
 
           <form className="dashed-row" onSubmit={addGuest} style={{ marginTop: 0 }}>
-            <input className="dashed-input" value={guestInput} onChange={(e) => setGuestInput(e.target.value)} placeholder="Type a guest's name" />
-            <button className="btn btn-primary btn-icon-square" type="submit"><Plus size={18} /></button>
+            <input
+              className="dashed-input"
+              value={guestInput}
+              onChange={(e) => setGuestInput(e.target.value)}
+              placeholder={atCapacity ? "No spots left" : "Type a guest's name"}
+              disabled={atCapacity}
+            />
+            <button className="btn btn-primary btn-icon-square" type="submit" disabled={atCapacity}><Plus size={18} /></button>
           </form>
-          <div className="helper-text">No limit &middot; add as many as you like</div>
+          <div className="helper-text" style={atCapacity ? { color: "var(--coral)" } : undefined}>
+            {hasLimit
+              ? atCapacity
+                ? spotsLeft < 0
+                  ? `Over the limit by ${Math.abs(spotsLeft)} — remove a guest to continue`
+                  : "No spots left for this event"
+                : `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left`
+              : "No limit · add as many as you like"}
+          </div>
         </div>
 
         <div className="total-bar">
@@ -103,10 +128,10 @@ export default function JoinScreen({ session }) {
             <div className="amount" style={{ fontSize: 26 }}>₱{amount.toLocaleString()}</div>
           </div>
           <button
-            className={`btn btn-block ${name.trim() ? "btn-accent" : "btn-disabled"}`}
+            className={`btn btn-block ${name.trim() && !(hasLimit && spotsLeft < 0) ? "btn-accent" : "btn-disabled"}`}
             style={{ marginTop: 12 }}
             onClick={requestToJoin}
-            disabled={!name.trim() || submitting}
+            disabled={!name.trim() || submitting || (hasLimit && spotsLeft < 0)}
           >
             {submitting ? "Sending request..." : "Request to join"}
           </button>
