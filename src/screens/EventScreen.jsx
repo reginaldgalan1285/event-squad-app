@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { X, Plus, Users, MapPin, Calendar, UserPlus, ChevronDown, Check, Clock, LogOut, ArrowLeft } from "lucide-react";
+import { X, Plus, Users, MapPin, Calendar, UserPlus, ChevronDown, Check, Clock, LogOut, ArrowLeft, Pencil } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { SPORTS, initials } from "../lib/constants";
 
@@ -22,6 +22,8 @@ export default function EventScreen({ session }) {
   const [priceDraft, setPriceDraft] = useState(0);
   const [editingMax, setEditingMax] = useState(false);
   const [maxDraft, setMaxDraft] = useState("");
+  const [editingGuestId, setEditingGuestId] = useState(null);
+  const [guestEditDraft, setGuestEditDraft] = useState("");
 
   const isHost = event?.host_id === session.user.id;
   const isMember = members.some((m) => m.user_id === session.user.id);
@@ -93,6 +95,11 @@ export default function EventScreen({ session }) {
     await loadAll();
   }
 
+  async function toggleAllowLeave() {
+    await supabase.from("events").update({ allow_leave: !(event.allow_leave !== false) }).eq("id", eventId);
+    await loadAll();
+  }
+
   async function addGuestTo(memberId, e) {
     e.preventDefault();
     const trimmed = (guestInputs[memberId] || "").trim();
@@ -108,6 +115,17 @@ export default function EventScreen({ session }) {
 
   async function removeGuest(guestId) {
     await supabase.from("guests").delete().eq("id", guestId);
+    await loadAll();
+  }
+
+  async function editGuestName(guestId) {
+    const trimmed = guestEditDraft.trim();
+    if (!trimmed) {
+      setEditingGuestId(null);
+      return;
+    }
+    await supabase.from("guests").update({ name: trimmed }).eq("id", guestId);
+    setEditingGuestId(null);
     await loadAll();
   }
 
@@ -216,6 +234,19 @@ export default function EventScreen({ session }) {
               </button>
             )}
           </div>
+
+          <div className="price-chip" style={{ marginTop: 8 }}>
+            <span className="label">Players can leave</span>
+            {isHost ? (
+              <button onClick={toggleAllowLeave}>
+                {event.allow_leave !== false ? "On" : "Off"}
+              </button>
+            ) : (
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 15, fontWeight: 600, color: "var(--citrus)" }}>
+                {event.allow_leave !== false ? "Allowed" : "Locked"}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="body-scroll">
@@ -236,20 +267,57 @@ export default function EventScreen({ session }) {
 
                 {member.guests?.length > 0 && (
                   <div className="guest-list">
-                    {member.guests.map((g) => (
-                      <div key={g.id} className="guest-row">
-                        <div className="left">
-                          <div className="avatar guest">{initials(g.name)}</div>
-                          <span className="name">{g.name}</span>
-                          <span className="tag">no account</span>
+                    {member.guests.map((g) => {
+                      const canManage = (memberIsHost && isHost) || (memberIsMe && !memberIsHost);
+                      const canDelete = memberIsHost && isHost;
+                      const isEditing = editingGuestId === g.id;
+                      return (
+                        <div key={g.id} className="guest-row">
+                          {isEditing ? (
+                            <>
+                              <div className="left" style={{ flex: 1 }}>
+                                <div className="avatar guest">{initials(guestEditDraft)}</div>
+                                <input
+                                  className="dashed-input"
+                                  style={{ padding: "4px 8px", fontSize: 13 }}
+                                  autoFocus
+                                  value={guestEditDraft}
+                                  onChange={(e) => setGuestEditDraft(e.target.value)}
+                                  onKeyDown={(e) => e.key === "Enter" && editGuestName(g.id)}
+                                />
+                              </div>
+                              <button className="icon-btn" style={{ color: "var(--green)" }} onClick={() => editGuestName(g.id)}>
+                                <Check size={14} />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <div className="left">
+                                <div className="avatar guest">{initials(g.name)}</div>
+                                <span className="name">{g.name}</span>
+                                <span className="tag">no account</span>
+                              </div>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                {canManage && (
+                                  <button
+                                    className="icon-btn"
+                                    style={{ color: "var(--fade)" }}
+                                    onClick={() => { setEditingGuestId(g.id); setGuestEditDraft(g.name); }}
+                                  >
+                                    <Pencil size={13} />
+                                  </button>
+                                )}
+                                {canDelete && (
+                                  <button className="icon-btn" style={{ color: "#ff6152" }} onClick={() => removeGuest(g.id)}>
+                                    <X size={13} />
+                                  </button>
+                                )}
+                              </div>
+                            </>
+                          )}
                         </div>
-                        {(memberIsHost && isHost) || (memberIsMe && !memberIsHost) ? (
-                          <button className="icon-btn" style={{ color: "#ff6152" }} onClick={() => removeGuest(g.id)}>
-                            <X size={13} />
-                          </button>
-                        ) : null}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
@@ -274,13 +342,19 @@ export default function EventScreen({ session }) {
                     >
                       <Plus size={14} /> Add a guest &middot; ₱{Number(event.price_per_player).toLocaleString()} each
                     </button>
-                    <button
-                      className="btn btn-outline-coral btn-small"
-                      style={{ width: "100%", marginTop: 8 }}
-                      onClick={() => leaveEvent(member.id)}
-                    >
-                      Leave event
-                    </button>
+                    {event.allow_leave !== false ? (
+                      <button
+                        className="btn btn-outline-coral btn-small"
+                        style={{ width: "100%", marginTop: 8 }}
+                        onClick={() => leaveEvent(member.id)}
+                      >
+                        Leave event
+                      </button>
+                    ) : (
+                      <div style={{ fontSize: 10.5, color: "var(--fade)", textAlign: "center", marginTop: 8 }}>
+                        The host has locked the roster — message them to be removed.
+                      </div>
+                    )}
                   </>
                 )}
               </div>

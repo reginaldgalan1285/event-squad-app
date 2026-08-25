@@ -320,3 +320,43 @@ begin
   where id = request_id;
 end;
 $$;
+
+-- ============================================================
+-- Let a member edit (rename) a guest under their own row.
+-- ============================================================
+create policy "guests_update_own_member" on guests
+  for update using (
+    exists (select 1 from event_members m where m.id = member_id and m.user_id = auth.uid())
+  );
+
+-- Replaces the original delete policy: previously any member could
+-- delete their own guests. Now only the event's host can delete —
+-- other members can rename (above) but not remove. Enforced here,
+-- not just hidden in the UI, since a UI-only restriction is not real
+-- security.
+drop policy if exists "guests_delete_own_member" on guests;
+create policy "guests_delete_host_only" on guests
+  for delete using (
+    exists (
+      select 1 from event_members m
+      join events e on e.id = m.event_id
+      where m.id = guests.member_id and e.host_id = auth.uid()
+    )
+  );
+
+-- ============================================================
+-- Let the host lock the roster so confirmed/paid players can no
+-- longer leave on their own. Defaults to allowed (true).
+-- ============================================================
+alter table events add column allow_leave boolean not null default true;
+
+-- Replaces the original leave policy: now also checks the event's
+-- allow_leave flag, enforced here (not just hidden in the UI) so
+-- a locked roster can't be bypassed by calling the API directly.
+drop policy if exists "members_delete_own" on event_members;
+create policy "members_delete_own" on event_members
+  for delete using (
+    user_id = auth.uid()
+    and is_host = false
+    and exists (select 1 from events e where e.id = event_id and coalesce(e.allow_leave, true))
+  );
