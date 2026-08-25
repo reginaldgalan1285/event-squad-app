@@ -239,3 +239,84 @@ create policy "qr_update_own_folder" on storage.objects
 create policy "qr_select_public" on storage.objects
   for select to public
   using (bucket_id = 'payment-qr');
+
+-- ============================================================
+-- Let a confirmed (non-host) player leave an event themselves,
+-- and let a player withdraw their own still-pending join request.
+-- Neither existed before — there was no way to undo either action.
+-- ============================================================
+create policy "members_delete_own" on event_members
+  for delete using (user_id = auth.uid() and is_host = false);
+
+create policy "requests_delete_own" on payment_requests
+  for delete using (user_id = auth.uid() and status in ('awaiting_payment', 'pending_approval'));
+
+-- ============================================================
+-- Top-up payments: a confirmed non-host player adding MORE guests
+-- after approval now goes through a payment request again, just
+-- like their original join — this links that request to their
+-- existing event_members row instead of creating a new one.
+-- ============================================================
+alter table payment_requests add column member_id uuid references event_members(id) on delete cascade;
+
+-- Replaces the original insert policy: also makes sure a top-up
+-- request can only target a member row the requester actually owns.
+drop policy if exists "requests_insert_own" on payment_requests;
+create policy "requests_insert_own" on payment_requests
+  for insert with check (
+    user_id = auth.uid()
+    and (
+      member_id is null
+      or exists (select 1 from event_members m where m.id = member_id and m.user_id = auth.uid())
+    )
+  );
+
+-- Replaces approve_payment_request: if member_id is set, this is a
+-- top-up — add the guests to that existing member instead of
+-- creating a new event_members row.
+create or replace function approve_payment_request(request_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  req payment_requests%rowtype;
+  new_member_id uuid;
+  g text;
+begin
+  select * into req from payment_requests where id = request_id;
+
+  if req.id is null then
+    raise exception 'Request not found';
+  end if;
+
+  if req.status <> 'pending_approval' then
+    raise exception 'Request is not pending approval';
+  end if;
+
+  if not exists (
+    select 1 from events e where e.id = req.event_id and e.host_id = auth.uid()
+  ) then
+    raise exception 'Only the host can approve requests';
+  end if;
+
+  if req.member_id is not null then
+    foreach g in array req.guest_names loop
+      insert into guests (member_id, name) values (req.member_id, g);
+    end loop;
+  else
+    insert into event_members (event_id, user_id, name, is_host)
+    values (req.event_id, req.user_id, req.name, false)
+    returning id into new_member_id;
+
+    foreach g in array req.guest_names loop
+      insert into guests (member_id, name) values (new_member_id, g);
+    end loop;
+  end if;
+
+  update payment_requests
+  set status = 'approved', decided_at = now()
+  where id = request_id;
+end;
+$$;

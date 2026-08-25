@@ -97,6 +97,10 @@ export default function EventScreen({ session }) {
     e.preventDefault();
     const trimmed = (guestInputs[memberId] || "").trim();
     if (!trimmed) return;
+    if (event?.max_players != null && totalPlayers >= event.max_players) {
+      alert("This event is at its player limit.");
+      return;
+    }
     await supabase.from("guests").insert({ member_id: memberId, name: trimmed });
     setGuestInputs((g) => ({ ...g, [memberId]: "" }));
     await loadAll();
@@ -104,6 +108,18 @@ export default function EventScreen({ session }) {
 
   async function removeGuest(guestId) {
     await supabase.from("guests").delete().eq("id", guestId);
+    await loadAll();
+  }
+
+  async function leaveEvent(memberId) {
+    if (!window.confirm("Leave this event? This removes you and any guests you added.")) return;
+    await supabase.from("event_members").delete().eq("id", memberId);
+    await loadAll();
+  }
+
+  async function withdrawRequest(requestId) {
+    if (!window.confirm("Withdraw your request to join? This cancels your spot and any guests you added.")) return;
+    await supabase.from("payment_requests").delete().eq("id", requestId);
     await loadAll();
   }
 
@@ -237,7 +253,7 @@ export default function EventScreen({ session }) {
                   </div>
                 )}
 
-                {(memberIsHost && isHost) && (
+                {memberIsHost && isHost && (
                   <form className="dashed-row" onSubmit={(e) => addGuestTo(member.id, e)}>
                     <input
                       className="dashed-input"
@@ -248,20 +264,42 @@ export default function EventScreen({ session }) {
                     <button className="btn btn-primary btn-icon-square" type="submit"><Plus size={15} /></button>
                   </form>
                 )}
+
+                {memberIsMe && !memberIsHost && (
+                  <>
+                    <button
+                      className="dashed-join-btn"
+                      style={{ marginTop: 10 }}
+                      onClick={() => navigate(`/event/${eventId}/topup/${member.id}`)}
+                    >
+                      <Plus size={14} /> Add a guest &middot; ₱{Number(event.price_per_player).toLocaleString()} each
+                    </button>
+                    <button
+                      className="btn btn-outline-coral btn-small"
+                      style={{ width: "100%", marginTop: 8 }}
+                      onClick={() => leaveEvent(member.id)}
+                    >
+                      Leave event
+                    </button>
+                  </>
+                )}
               </div>
             );
           })}
 
           {requests.length > 0 && (
             <>
-              <div className="section-title" style={{ marginTop: 16 }}>REQUESTS TO JOIN &middot; {requests.length}</div>
+              <div className="section-title" style={{ marginTop: 16 }}>PENDING REQUESTS &middot; {requests.length}</div>
               {requests.map((r) => {
-                const count = 1 + (r.guest_names?.length || 0);
+                const isTopUp = !!r.member_id;
+                const count = isTopUp ? (r.guest_names?.length || 0) : 1 + (r.guest_names?.length || 0);
                 return (
                   <div key={r.id} className="request-card">
                     <div className="member-name">{r.name}</div>
                     <div style={{ fontSize: 11.5, color: "#8a9a93", marginTop: 2 }}>
-                      {count} players &middot; ₱{Number(r.amount).toLocaleString()}
+                      {isTopUp
+                        ? `+${count} more guest${count !== 1 ? "s" : ""} · ₱${Number(r.amount).toLocaleString()}`
+                        : `${count} players · ₱${Number(r.amount).toLocaleString()}`}
                     </div>
                     {r.status === "pending_approval" ? (
                       <div className="status-line paid"><Check size={12} /> Payment sent &middot; awaiting host approval</div>
@@ -273,6 +311,15 @@ export default function EventScreen({ session }) {
                         <button className="btn btn-primary btn-small" onClick={() => approveRequest(r.id)}>Approve</button>
                         <button className="btn btn-outline-coral btn-small" onClick={() => declineRequest(r.id)}>Decline</button>
                       </div>
+                    )}
+                    {r.user_id === session.user.id && (
+                      <button
+                        className="btn btn-outline-coral btn-small"
+                        style={{ width: "100%", marginTop: 10 }}
+                        onClick={() => withdrawRequest(r.id)}
+                      >
+                        Withdraw request
+                      </button>
                     )}
                   </div>
                 );

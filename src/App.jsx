@@ -7,6 +7,7 @@ import Discover from "./screens/Discover";
 import CreateEvent from "./screens/CreateEvent";
 import EventScreen from "./screens/EventScreen";
 import JoinScreen from "./screens/JoinScreen";
+import TopUpScreen from "./screens/TopUpScreen";
 import PaymentScreen from "./screens/PaymentScreen";
 import Settings from "./screens/Settings";
 
@@ -33,6 +34,7 @@ export default function App() {
       <Route path="/settings" element={<Settings session={session} />} />
       <Route path="/event/:eventId" element={<EventScreen session={session} />} />
       <Route path="/event/:eventId/join" element={<JoinScreen session={session} />} />
+      <Route path="/event/:eventId/topup/:memberId" element={<TopUpScreen session={session} />} />
       <Route path="/event/:eventId/pay/:requestId" element={<PaymentScreen />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
