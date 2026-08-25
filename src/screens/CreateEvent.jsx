@@ -1,41 +1,20 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { SPORTS } from "../lib/constants";
 
-export default function Home({ session }) {
+export default function CreateEvent({ session }) {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [latestEventId, setLatestEventId] = useState(null);
-
   const [sport, setSport] = useState("Pickleball");
   const [title, setTitle] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [location, setLocation] = useState("");
   const [price, setPrice] = useState(150);
+  const [maxPlayers, setMaxPlayers] = useState("");
   const [hostName, setHostName] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    loadLatestEvent();
-  }, []);
-
-  async function loadLatestEvent() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("events")
-      .select("id")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (!error && data) {
-      setLatestEventId(data.id);
-      navigate(`/event/${data.id}`, { replace: true });
-    }
-    setLoading(false);
-  }
 
   async function handleCreate(e) {
     e.preventDefault();
@@ -52,6 +31,7 @@ export default function Home({ session }) {
         event_date: new Date(eventDate).toISOString(),
         location: location.trim(),
         price_per_player: Number(price) || 0,
+        max_players: maxPlayers ? Number(maxPlayers) : null,
       })
       .select()
       .single();
@@ -79,26 +59,19 @@ export default function Home({ session }) {
     navigate(`/event/${event.id}`);
   }
 
-  if (loading) {
-    return (
-      <div className="app-shell">
-        <div className="phone" style={{ alignItems: "center", justifyContent: "center" }}>
-          Loading...
-        </div>
-      </div>
-    );
-  }
-
-  // No event exists anywhere yet (or none this user can reach) — offer to create one.
   return (
     <div className="app-shell">
       <div className="phone">
         <div className="header">
-          <div className="title-display">Create your event</div>
-          <div style={{ fontSize: 12.5, opacity: 0.85, marginTop: 6 }}>
+          <div className="header-row">
+            <button className="icon-btn" onClick={() => navigate("/")}><ArrowLeft size={18} /></button>
+            <div className="title-display" style={{ fontSize: 18 }}>Create event</div>
+          </div>
+          <div style={{ fontSize: 12.5, opacity: 0.85, marginTop: 10 }}>
             You'll be the host — you can add guests directly and approve join requests.
           </div>
         </div>
+
         <div className="body-scroll">
           <form onSubmit={handleCreate}>
             <div className="field-label">Your name (shown to other players)</div>
@@ -122,6 +95,9 @@ export default function Home({ session }) {
 
             <div className="field-label" style={{ marginTop: 14 }}>Price per player (₱)</div>
             <input className="solid-input" type="number" value={price} onChange={(e) => setPrice(e.target.value)} min="0" />
+
+            <div className="field-label" style={{ marginTop: 14 }}>Max players (optional)</div>
+            <input className="solid-input" type="number" value={maxPlayers} onChange={(e) => setMaxPlayers(e.target.value)} min="1" placeholder="Leave blank for no limit" />
 
             <button className="btn btn-primary btn-block" style={{ marginTop: 20 }} type="submit" disabled={creating}>
               {creating ? "Creating..." : "Create event"}

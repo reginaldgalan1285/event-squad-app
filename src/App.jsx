@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import Auth from "./screens/Auth";
-import Home from "./screens/Home";
+import Dashboard from "./screens/Dashboard";
+import Discover from "./screens/Discover";
+import CreateEvent from "./screens/CreateEvent";
 import EventScreen from "./screens/EventScreen";
 import JoinScreen from "./screens/JoinScreen";
 import PaymentScreen from "./screens/PaymentScreen";
@@ -24,7 +26,9 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/" element={<Home session={session} />} />
+      <Route path="/" element={<Dashboard session={session} />} />
+      <Route path="/discover" element={<Discover session={session} />} />
+      <Route path="/create" element={<CreateEvent session={session} />} />
       <Route path="/event/:eventId" element={<EventScreen session={session} />} />
       <Route path="/event/:eventId/join" element={<JoinScreen session={session} />} />
       <Route path="/event/:eventId/pay/:requestId" element={<PaymentScreen />} />

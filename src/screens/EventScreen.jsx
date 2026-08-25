@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { X, Plus, Users, MapPin, Calendar, UserPlus, ChevronDown, Check, Clock, LogOut } from "lucide-react";
+import { X, Plus, Users, MapPin, Calendar, UserPlus, ChevronDown, Check, Clock, LogOut, ArrowLeft } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { SPORTS, initials } from "../lib/constants";
 
@@ -112,6 +112,8 @@ export default function EventScreen({ session }) {
       <div className="phone">
         <div className="header">
           <div className="header-row" style={{ justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button className="icon-btn" onClick={() => navigate("/")}><ArrowLeft size={18} /></button>
             <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
               <select
                 className="pill-select"
@@ -124,6 +126,7 @@ export default function EventScreen({ session }) {
                 ))}
               </select>
               <ChevronDown size={12} style={{ position: "absolute", right: 8, pointerEvents: "none", opacity: 0.8 }} />
+            </div>
             </div>
             <button className="icon-btn" onClick={handleSignOut} title="Sign out">
               <LogOut size={16} />

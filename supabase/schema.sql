@@ -13,6 +13,7 @@ create table events (
   event_date timestamptz not null,
   location text,
   price_per_player numeric(10,2) not null default 0,
+  max_players int,
   created_at timestamptz not null default now()
 );
 
@@ -178,3 +179,9 @@ create index idx_event_members_event on event_members(event_id);
 create index idx_guests_member on guests(member_id);
 create index idx_payment_requests_event on payment_requests(event_id);
 create index idx_payment_requests_status on payment_requests(status);
+
+-- ============================================================
+-- Migration: run this if you already applied schema.sql before
+-- max_players was added to events.
+-- ============================================================
+-- alter table events add column max_players int;
