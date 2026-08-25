@@ -20,6 +20,8 @@ export default function EventScreen({ session }) {
   const [savingPrice, setSavingPrice] = useState(false);
   const [editingPrice, setEditingPrice] = useState(false);
   const [priceDraft, setPriceDraft] = useState(0);
+  const [editingMax, setEditingMax] = useState(false);
+  const [maxDraft, setMaxDraft] = useState("");
 
   const isHost = event?.host_id === session.user.id;
   const isMember = members.some((m) => m.user_id === session.user.id);
@@ -28,7 +30,10 @@ export default function EventScreen({ session }) {
   const loadAll = useCallback(async () => {
     const { data: eventData } = await supabase.from("events").select("*").eq("id", eventId).single();
     setEvent(eventData);
-    if (eventData) setPriceDraft(eventData.price_per_player);
+    if (eventData) {
+      setPriceDraft(eventData.price_per_player);
+      setMaxDraft(eventData.max_players ?? "");
+    }
 
     const { data: memberData } = await supabase
       .from("event_members")
@@ -76,6 +81,15 @@ export default function EventScreen({ session }) {
     await supabase.from("events").update({ price_per_player: Number(priceDraft) || 0 }).eq("id", eventId);
     setSavingPrice(false);
     setEditingPrice(false);
+    await loadAll();
+  }
+
+  async function saveMaxPlayers() {
+    await supabase
+      .from("events")
+      .update({ max_players: maxDraft === "" ? null : Number(maxDraft) })
+      .eq("id", eventId);
+    setEditingMax(false);
     await loadAll();
   }
 
@@ -161,6 +175,27 @@ export default function EventScreen({ session }) {
             ) : (
               <button onClick={() => isHost && setEditingPrice(true)}>
                 ₱{Number(event.price_per_player).toLocaleString()}
+                {isHost && <span style={{ fontSize: 10, opacity: 0.6, color: "#fff" }}> edit</span>}
+              </button>
+            )}
+          </div>
+
+          <div className="price-chip" style={{ marginTop: 8 }}>
+            <span className="label">Max players</span>
+            {isHost && editingMax ? (
+              <input
+                type="number"
+                autoFocus
+                min="1"
+                value={maxDraft}
+                placeholder="No limit"
+                onChange={(e) => setMaxDraft(e.target.value)}
+                onBlur={saveMaxPlayers}
+                onKeyDown={(e) => e.key === "Enter" && saveMaxPlayers()}
+              />
+            ) : (
+              <button onClick={() => isHost && setEditingMax(true)}>
+                {event.max_players ? `${totalPlayers} / ${event.max_players}` : `${totalPlayers} · no limit`}
                 {isHost && <span style={{ fontSize: 10, opacity: 0.6, color: "#fff" }}> edit</span>}
               </button>
             )}
