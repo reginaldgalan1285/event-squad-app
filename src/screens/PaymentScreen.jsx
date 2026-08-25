@@ -8,10 +8,22 @@ export default function PaymentScreen() {
   const { eventId, requestId } = useParams();
   const navigate = useNavigate();
   const [request, setRequest] = useState(null);
+  const [hostPayment, setHostPayment] = useState(null);
   const [marking, setMarking] = useState(false);
 
   useEffect(() => {
-    supabase.from("payment_requests").select("*").eq("id", requestId).single().then(({ data }) => setRequest(data));
+    supabase.from("payment_requests").select("*").eq("id", requestId).single().then(async ({ data }) => {
+      setRequest(data);
+      if (!data) return;
+      const { data: eventData } = await supabase.from("events").select("host_id").eq("id", data.event_id).single();
+      if (!eventData) return;
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("payment_qr_url, payment_label")
+        .eq("id", eventData.host_id)
+        .maybeSingle();
+      setHostPayment(profileData);
+    });
   }, [requestId]);
 
   async function cancelPayment() {
@@ -56,9 +68,19 @@ export default function PaymentScreen() {
           </div>
 
           <div className="qr-card">
-            <QRPlaceholder seed={requestId.length + Number(request.amount)} />
+            {hostPayment?.payment_qr_url ? (
+              <img
+                src={hostPayment.payment_qr_url}
+                alt="Host's payment QR"
+                style={{ width: 160, height: 160, objectFit: "contain", display: "block" }}
+              />
+            ) : (
+              <QRPlaceholder seed={requestId.length + Number(request.amount)} />
+            )}
             <div style={{ marginTop: 12, fontSize: 13, fontWeight: 700 }}>Scan with GCash or your bank app</div>
-            <div style={{ fontSize: 11.5, color: "#8a9a93", marginTop: 2 }}>Send to: Host &middot; GCash / bank on file</div>
+            <div style={{ fontSize: 11.5, color: "#8a9a93", marginTop: 2 }}>
+              {hostPayment?.payment_label ? `Send to: ${hostPayment.payment_label}` : "Send to: Host · GCash / bank on file"}
+            </div>
           </div>
 
           <div style={{ fontSize: 11, color: "#8a9a93", marginTop: 16, textAlign: "center", lineHeight: 1.5 }}>

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Compass, PlusCircle, Users, Clock3, BarChart3, Settings, LogOut } from "lucide-react";
+import { Compass, PlusCircle, Users, Clock3, BarChart3, Settings as SettingsIcon, LogOut } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { initials } from "../lib/constants";
 
 // Tiles with no real screen behind them yet — tapping just surfaces that,
 // same idea as a disabled nav item, rather than pretending it works.
-const SOON_TILES = ["My network", "History", "Statistics", "Settings"];
+const SOON_TILES = ["My network", "History", "Statistics"];
 
 export default function Dashboard({ session }) {
   const navigate = useNavigate();
@@ -47,7 +47,7 @@ export default function Dashboard({ session }) {
     { label: "My network", icon: Users, onClick: () => tapSoon("My network") },
     { label: "History", icon: Clock3, onClick: () => tapSoon("History") },
     { label: "Statistics", icon: BarChart3, onClick: () => tapSoon("Statistics") },
-    { label: "Settings", icon: Settings, onClick: () => tapSoon("Settings") },
+    { label: "Settings", icon: SettingsIcon, onClick: () => navigate("/settings") },
   ];
 
   return (

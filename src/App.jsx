@@ -8,6 +8,7 @@ import CreateEvent from "./screens/CreateEvent";
 import EventScreen from "./screens/EventScreen";
 import JoinScreen from "./screens/JoinScreen";
 import PaymentScreen from "./screens/PaymentScreen";
+import Settings from "./screens/Settings";
 
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = still checking
@@ -29,6 +30,7 @@ export default function App() {
       <Route path="/" element={<Dashboard session={session} />} />
       <Route path="/discover" element={<Discover session={session} />} />
       <Route path="/create" element={<CreateEvent session={session} />} />
+      <Route path="/settings" element={<Settings session={session} />} />
       <Route path="/event/:eventId" element={<EventScreen session={session} />} />
       <Route path="/event/:eventId/join" element={<JoinScreen session={session} />} />
       <Route path="/event/:eventId/pay/:requestId" element={<PaymentScreen />} />

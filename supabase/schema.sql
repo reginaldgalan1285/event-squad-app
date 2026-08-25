@@ -193,3 +193,42 @@ create index idx_payment_requests_status on payment_requests(status);
 -- until they navigate away and back.
 -- ============================================================
 alter publication supabase_realtime add table events, event_members, guests, payment_requests;
+
+-- ============================================================
+-- PROFILES
+-- One row per user, holding their payment QR + label so OTHER
+-- players (not just the owner) can see it on the payment screen.
+-- This has to be a public-readable table, not user_metadata,
+-- because auth.users data isn't visible across users on the client.
+-- ============================================================
+create table profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  payment_qr_url text,
+  payment_label text,
+  updated_at timestamptz not null default now()
+);
+
+alter table profiles enable row level security;
+
+create policy "profiles_select_authenticated" on profiles
+  for select using (auth.role() = 'authenticated');
+
+create policy "profiles_upsert_own" on profiles
+  for insert with check (id = auth.uid());
+
+create policy "profiles_update_own" on profiles
+  for update using (id = auth.uid());
+
+-- ============================================================
+-- STORAGE: after running this file, also create a bucket:
+-- Supabase dashboard -> Storage -> New bucket -> name it
+-- "payment-qr" -> toggle "Public bucket" ON.
+-- Then run this so people can only upload/replace their own QR:
+-- ============================================================
+create policy "qr_upload_own_folder" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'payment-qr' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "qr_update_own_folder" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'payment-qr' and (storage.foldername(name))[1] = auth.uid()::text);

@@ -411,3 +411,52 @@ body {
   background: var(--citrus); color: var(--ink); font-family: var(--font-mono); font-weight: 600;
   font-size: 11.5px; padding: 3px 8px; border-radius: 8px; white-space: nowrap;
 }
+
+/* ---------- Settings ---------- */
+.settings-top {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+}
+.settings-top-item {
+  flex: 1;
+  text-align: center;
+  padding: 20px 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  border-right: 1px solid var(--line);
+}
+.settings-top-item:last-child { border-right: none; }
+
+.qr-upload-card {
+  margin: 16px 20px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--white);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.settings-row .left { display: flex; align-items: center; gap: 12px; }
+.settings-row.danger { color: var(--coral); }
+
+.version-text {
+  text-align: center;
+  font-size: 11px;
+  color: var(--fade);
+  padding: 18px 20px 26px;
+}
