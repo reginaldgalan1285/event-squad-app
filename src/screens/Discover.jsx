@@ -41,7 +41,7 @@ export default function Discover() {
   async function loadPeople() {
     const { data } = await supabase
       .from("profiles")
-      .select("id, display_name, preferred_sport")
+      .select("id, display_name, preferred_sport, avatar_url")
       .order("display_name", { ascending: true, nullsFirst: false });
     setPeople(data || []);
   }
@@ -150,7 +150,13 @@ export default function Discover() {
               people.map((p) => (
                 <div key={p.id} className="mine-card" style={{ margin: "0 20px 10px", cursor: "default" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div className="avatar member">{initials(p.display_name || "?")}</div>
+                    <div className="avatar member" style={{ overflow: "hidden" }}>
+                      {p.avatar_url ? (
+                        <img src={p.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        initials(p.display_name || "?")
+                      )}
+                    </div>
                     <div>
                       <div className="name">{p.display_name || "New player"}</div>
                       {p.preferred_sport && <div className="sub">{p.preferred_sport}</div>}

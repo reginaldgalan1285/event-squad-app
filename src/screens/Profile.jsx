@@ -1,16 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Settings as SettingsIcon, ThumbsUp, ChevronRight } from "lucide-react";
+import { ArrowLeft, Settings as SettingsIcon, ThumbsUp, ChevronRight, Camera } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { SPORTS, initials } from "../lib/constants";
 
 export default function Profile({ session }) {
   const navigate = useNavigate();
+  const fileInputRef = useRef(null);
   const [displayName, setDisplayName] = useState("");
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [preferredSport, setPreferredSport] = useState("");
   const [pickingSport, setPickingSport] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -20,15 +24,44 @@ export default function Profile({ session }) {
   async function loadProfile() {
     const { data } = await supabase
       .from("profiles")
-      .select("display_name, preferred_sport")
+      .select("display_name, preferred_sport, avatar_url")
       .eq("id", session.user.id)
       .maybeSingle();
     if (data) {
       setDisplayName(data.display_name || "");
       setNameDraft(data.display_name || "");
       setPreferredSport(data.preferred_sport || "");
+      setAvatarUrl(data.avatar_url || null);
     }
     setLoading(false);
+  }
+
+  async function handleAvatarChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarError("");
+    setUploadingAvatar(true);
+
+    const path = `${session.user.id}/avatar-${Date.now()}.${file.name.split(".").pop()}`;
+    const { error: uploadError } = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
+
+    if (uploadError) {
+      setUploadingAvatar(false);
+      setAvatarError(uploadError.message);
+      return;
+    }
+
+    const { data: publicData } = supabase.storage.from("avatars").getPublicUrl(path);
+    const publicUrl = publicData.publicUrl;
+
+    const { error: upsertError } = await supabase.from("profiles").upsert({ id: session.user.id, avatar_url: publicUrl });
+
+    setUploadingAvatar(false);
+    if (upsertError) {
+      setAvatarError(upsertError.message);
+      return;
+    }
+    setAvatarUrl(publicUrl);
   }
 
   async function saveName() {
@@ -66,9 +99,42 @@ export default function Profile({ session }) {
         </div>
 
         <div className="body-scroll" style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 8 }}>
-          <div className="dash-avatar" style={{ width: 88, height: 88, fontSize: 30, marginTop: 8 }}>
-            {initials(shownName)}
+          <div style={{ position: "relative", marginTop: 8 }}>
+            <div
+              className="dash-avatar"
+              style={{ width: 88, height: 88, fontSize: 30, overflow: "hidden" }}
+            >
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Your profile photo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : (
+                initials(shownName)
+              )}
+            </div>
+            <input type="file" accept="image/*" ref={fileInputRef} onChange={handleAvatarChange} style={{ display: "none" }} />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingAvatar}
+              aria-label={avatarUrl ? "Change profile photo" : "Add profile photo"}
+              style={{
+                position: "absolute",
+                bottom: -2,
+                right: -2,
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                background: "var(--citrus)",
+                border: "2px solid var(--chalk)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+              }}
+            >
+              <Camera size={13} color="var(--ink)" />
+            </button>
           </div>
+          {uploadingAvatar && <div className="helper-text">Uploading...</div>}
+          {avatarError && <div className="error-text">{avatarError}</div>}
 
           {editingName ? (
             <input

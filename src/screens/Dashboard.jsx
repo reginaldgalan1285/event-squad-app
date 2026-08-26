@@ -14,6 +14,7 @@ export default function Dashboard({ session }) {
   const [loading, setLoading] = useState(true);
   const [soonMessage, setSoonMessage] = useState("");
   const [profileName, setProfileName] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState(null);
 
   const displayName = profileName || session.user.email?.split("@")[0] || "there";
 
@@ -23,8 +24,9 @@ export default function Dashboard({ session }) {
   }, []);
 
   async function loadProfile() {
-    const { data } = await supabase.from("profiles").select("display_name").eq("id", session.user.id).maybeSingle();
+    const { data } = await supabase.from("profiles").select("display_name, avatar_url").eq("id", session.user.id).maybeSingle();
     if (data?.display_name) setProfileName(data.display_name);
+    if (data?.avatar_url) setAvatarUrl(data.avatar_url);
   }
 
   async function loadMyEvents() {
@@ -62,7 +64,13 @@ export default function Dashboard({ session }) {
       <div className="phone">
         <div className="dash-topbar">
           <div className="dash-greeting" style={{ cursor: "pointer" }} onClick={() => navigate("/profile")}>
-            <div className="dash-avatar">{initials(displayName)}</div>
+            <div className="dash-avatar" style={{ overflow: "hidden" }}>
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : (
+                initials(displayName)
+              )}
+            </div>
             <div className="dash-name">Hi, {displayName}</div>
           </div>
           <button className="icon-btn" onClick={handleSignOut} title="Sign out">

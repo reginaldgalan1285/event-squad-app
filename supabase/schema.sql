@@ -418,3 +418,25 @@ begin
   return new;
 end;
 $$;
+
+-- ============================================================
+-- Profile photo. Same pattern as the payment-qr bucket earlier:
+-- after running this, also create a bucket in the Supabase
+-- dashboard -> Storage -> New bucket -> name it "avatars" ->
+-- toggle "Public bucket" ON.
+-- ============================================================
+alter table profiles add column avatar_url text;
+
+create policy "avatar_upload_own_folder" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "avatar_update_own_folder" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Needed for upsert:true uploads, same reason as payment-qr earlier —
+-- the existence check before overwrite requires its own SELECT policy.
+create policy "avatar_select_public" on storage.objects
+  for select to public
+  using (bucket_id = 'avatars');
