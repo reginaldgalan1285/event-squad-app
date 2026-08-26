@@ -1,8 +1,14 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { X, Plus, Users, MapPin, Calendar, UserPlus, ChevronDown, Check, Clock, LogOut, ArrowLeft, Pencil } from "lucide-react";
+import {
+  X, Plus, Users, MapPin, Calendar, UserPlus, ChevronDown, Check, Clock,
+  LogOut, ArrowLeft, Pencil, Share2, Tag, DollarSign,
+} from "lucide-react";
 import { supabase } from "../supabaseClient";
-import { SPORTS, initials, formatEventDateTime } from "../lib/constants";
+import {
+  SPORTS, initials, formatEventHeaderDate, formatEventDateLong,
+  formatDuration, googleCalendarUrl,
+} from "../lib/constants";
 
 function countFor(entity) {
   return 1 + (entity.guests?.length || 0);
@@ -17,7 +23,8 @@ export default function EventScreen({ session }) {
   const [requests, setRequests] = useState([]);
   const [guestInputs, setGuestInputs] = useState({});
   const [loading, setLoading] = useState(true);
-  const [savingPrice, setSavingPrice] = useState(false);
+  const [tab, setTab] = useState("details");
+
   const [editingPrice, setEditingPrice] = useState(false);
   const [priceDraft, setPriceDraft] = useState(0);
   const [editingMax, setEditingMax] = useState(false);
@@ -26,6 +33,9 @@ export default function EventScreen({ session }) {
   const [guestEditDraft, setGuestEditDraft] = useState("");
   const [editingMapUrl, setEditingMapUrl] = useState(false);
   const [mapUrlDraft, setMapUrlDraft] = useState("");
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const isHost = event?.host_id === session.user.id;
   const isMember = members.some((m) => m.user_id === session.user.id);
@@ -38,6 +48,7 @@ export default function EventScreen({ session }) {
       setPriceDraft(eventData.price_per_player);
       setMaxDraft(eventData.max_players ?? "");
       setMapUrlDraft(eventData.location_map_url ?? "");
+      setDescriptionDraft(eventData.description ?? "");
     }
 
     const { data: memberData } = await supabase
@@ -82,9 +93,7 @@ export default function EventScreen({ session }) {
   }
 
   async function savePrice() {
-    setSavingPrice(true);
     await supabase.from("events").update({ price_per_player: Number(priceDraft) || 0 }).eq("id", eventId);
-    setSavingPrice(false);
     setEditingPrice(false);
     await loadAll();
   }
@@ -106,6 +115,12 @@ export default function EventScreen({ session }) {
   async function saveMapUrl() {
     await supabase.from("events").update({ location_map_url: mapUrlDraft.trim() || null }).eq("id", eventId);
     setEditingMapUrl(false);
+    await loadAll();
+  }
+
+  async function saveDescription() {
+    await supabase.from("events").update({ description: descriptionDraft.trim() || null }).eq("id", eventId);
+    setEditingDescription(false);
     await loadAll();
   }
 
@@ -164,6 +179,21 @@ export default function EventScreen({ session }) {
     await supabase.auth.signOut();
   }
 
+  async function shareEvent() {
+    const url = window.location.href;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: event.title, url });
+      } catch {
+        // person cancelled the share sheet — nothing to do
+      }
+    } else {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    }
+  }
+
   if (loading || !event) {
     return (
       <div className="app-shell">
@@ -173,310 +203,388 @@ export default function EventScreen({ session }) {
     );
   }
 
+  const duration = formatDuration(event.event_date, event.end_time);
+
   return (
     <div className="app-shell">
       <img src="/event-squad-wordmark.svg" alt="Event Squad" className="brand-strip" />
       <div className="phone">
-        <div className="header">
+        <div className="header" style={{ paddingBottom: 14 }}>
           <div className="header-row" style={{ justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button className="icon-btn" onClick={() => navigate("/")}><ArrowLeft size={18} /></button>
-            <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
-              <select
-                className="pill-select"
-                value={event.sport}
-                onChange={(e) => handleSportChange(e.target.value)}
-                disabled={!isHost}
-              >
-                {SPORTS.map((s) => (
-                  <option key={s} value={s} style={{ color: "#16233a" }}>Open Play &middot; {s}</option>
-                ))}
-              </select>
-              <ChevronDown size={12} style={{ position: "absolute", right: 8, pointerEvents: "none", opacity: 0.8 }} />
+            <button className="icon-btn" onClick={() => navigate("/")}><ArrowLeft size={18} /></button>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600 }}>
+              {formatEventHeaderDate(event.event_date)}
             </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <button className="icon-btn" onClick={shareEvent} title="Share event"><Share2 size={16} /></button>
+              <button className="icon-btn" onClick={handleSignOut} title="Sign out"><LogOut size={16} /></button>
             </div>
-            <button className="icon-btn" onClick={handleSignOut} title="Sign out">
-              <LogOut size={16} />
-            </button>
           </div>
+          {copied && <div style={{ textAlign: "center", fontSize: 10.5, color: "var(--citrus)", marginTop: 4 }}>Link copied</div>}
 
-          <div className="title-display" style={{ marginTop: 8 }}>{event.title}</div>
-          <div className="meta-row">
-            <span><Calendar size={13} /> {formatEventDateTime(event.event_date)}</span>
-            {event.location && (
-              <span>
-                <MapPin size={13} />{" "}
-                {event.location_map_url ? (
-                  <a
-                    href={event.location_map_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: "inherit", textDecoration: "underline" }}
-                  >
-                    {event.location}
-                  </a>
-                ) : (
-                  event.location
-                )}
-              </span>
-            )}
-          </div>
-
-          {isHost && (
-            editingMapUrl ? (
-              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                <input
-                  type="url"
-                  autoFocus
-                  value={mapUrlDraft}
-                  onChange={(e) => setMapUrlDraft(e.target.value)}
-                  onBlur={saveMapUrl}
-                  onKeyDown={(e) => e.key === "Enter" && saveMapUrl()}
-                  placeholder="https://maps.app.goo.gl/..."
-                  style={{
-                    flex: 1, fontSize: 11.5, padding: "5px 8px", borderRadius: 8,
-                    border: "1px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)",
-                    color: "#fff", outline: "none",
-                  }}
-                />
+          <div className="title-display" style={{ marginTop: 10, fontSize: 20 }}>{event.title}</div>
+          <div style={{ marginTop: 6 }}>
+            {isHost ? (
+              <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                <select
+                  className="pill-select"
+                  value={event.sport}
+                  onChange={(e) => handleSportChange(e.target.value)}
+                >
+                  {SPORTS.map((s) => (
+                    <option key={s} value={s} style={{ color: "#16233a" }}>{s}</option>
+                  ))}
+                </select>
+                <ChevronDown size={12} style={{ position: "absolute", right: 8, pointerEvents: "none", opacity: 0.8 }} />
               </div>
             ) : (
-              <button
-                onClick={() => setEditingMapUrl(true)}
-                style={{ background: "none", border: "none", color: "rgba(255,255,255,0.6)", fontSize: 10.5, padding: 0, marginTop: 4, cursor: "pointer" }}
-              >
-                {event.location_map_url ? "edit map link" : "+ add Google Maps link"}
-              </button>
-            )
-          )}
-
-          <div className="price-chip">
-            <span className="label">Price per player</span>
-            {isHost && editingPrice ? (
-              <input
-                type="number"
-                autoFocus
-                value={priceDraft}
-                onChange={(e) => setPriceDraft(e.target.value)}
-                onBlur={savePrice}
-                onKeyDown={(e) => e.key === "Enter" && savePrice()}
-              />
-            ) : (
-              <button onClick={() => isHost && setEditingPrice(true)}>
-                ₱{Number(event.price_per_player).toLocaleString()}
-                {isHost && <span style={{ fontSize: 10, opacity: 0.6, color: "#fff" }}> edit</span>}
-              </button>
+              <span className="pill-select" style={{ cursor: "default" }}>{event.sport}</span>
             )}
           </div>
-
-          <div className="price-chip" style={{ marginTop: 8 }}>
-            <span className="label">Max players</span>
-            {isHost && editingMax ? (
-              <input
-                type="number"
-                autoFocus
-                min="1"
-                value={maxDraft}
-                placeholder="No limit"
-                onChange={(e) => setMaxDraft(e.target.value)}
-                onBlur={saveMaxPlayers}
-                onKeyDown={(e) => e.key === "Enter" && saveMaxPlayers()}
-              />
-            ) : (
-              <button onClick={() => isHost && setEditingMax(true)}>
-                {event.max_players ? `${totalPlayers} / ${event.max_players}` : `${totalPlayers} · no limit`}
-                {isHost && <span style={{ fontSize: 10, opacity: 0.6, color: "#fff" }}> edit</span>}
-              </button>
-            )}
-          </div>
-
-          {isHost && (
-            <div className="price-chip" style={{ marginTop: 8 }}>
-              <span className="label">Players can leave</span>
-              <button onClick={toggleAllowLeave}>
-                {event.allow_leave !== false ? "On" : "Off"}
-              </button>
-            </div>
-          )}
         </div>
 
-        <div className="body-scroll">
-          <div className="section-title"><Users size={15} /> CONFIRMED &middot; {totalPlayers}</div>
+        <div className="event-tabs">
+          <button className={`event-tab ${tab === "details" ? "selected" : ""}`} onClick={() => setTab("details")}>Details</button>
+          <button className={`event-tab ${tab === "participants" ? "selected" : ""}`} onClick={() => setTab("participants")}>
+            Participants &middot; {totalPlayers}
+          </button>
+        </div>
 
-          {members.map((member) => {
-            const memberIsHost = member.is_host;
-            const memberIsMe = member.user_id === session.user.id;
-            return (
-              <div key={member.id} className="card">
-                <div className="member-row">
-                  <div className={`avatar ${memberIsHost ? "host" : "member"}`}>{initials(member.name)}</div>
-                  <div>
-                    <div className="member-name">{member.name}</div>
-                    <div className="member-sub">{memberIsHost ? "Host · logged in" : "Confirmed · paid"}</div>
-                  </div>
-                </div>
-
-                {member.guests?.length > 0 && (
-                  <div className="guest-list">
-                    {member.guests.map((g) => {
-                      const canManage = (memberIsHost && isHost) || (memberIsMe && !memberIsHost);
-                      const canDelete = memberIsHost && isHost;
-                      const isEditing = editingGuestId === g.id;
-                      return (
-                        <div key={g.id} className="guest-row">
-                          {isEditing ? (
-                            <>
-                              <div className="left" style={{ flex: 1 }}>
-                                <div className="avatar guest">{initials(guestEditDraft)}</div>
-                                <input
-                                  className="dashed-input"
-                                  style={{ padding: "4px 8px", fontSize: 13 }}
-                                  autoFocus
-                                  value={guestEditDraft}
-                                  onChange={(e) => setGuestEditDraft(e.target.value)}
-                                  onKeyDown={(e) => e.key === "Enter" && editGuestName(g.id)}
-                                />
-                              </div>
-                              <button className="icon-btn" style={{ color: "var(--green)" }} onClick={() => editGuestName(g.id)}>
-                                <Check size={14} />
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <div className="left">
-                                <div className="avatar guest">{initials(g.name)}</div>
-                                <span className="name">{g.name}</span>
-                                <span className="tag">no account</span>
-                              </div>
-                              <div style={{ display: "flex", gap: 6 }}>
-                                {canManage && (
-                                  <button
-                                    className="icon-btn"
-                                    style={{ color: "var(--fade)" }}
-                                    onClick={() => { setEditingGuestId(g.id); setGuestEditDraft(g.name); }}
-                                  >
-                                    <Pencil size={13} />
-                                  </button>
-                                )}
-                                {canDelete && (
-                                  <button className="icon-btn" style={{ color: "#ff6152" }} onClick={() => removeGuest(g.id)}>
-                                    <X size={13} />
-                                  </button>
-                                )}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {memberIsHost && isHost && (
-                  <form className="dashed-row" onSubmit={(e) => addGuestTo(member.id, e)}>
-                    <input
-                      className="dashed-input"
-                      value={guestInputs[member.id] || ""}
-                      onChange={(e) => setGuestInputs((g) => ({ ...g, [member.id]: e.target.value }))}
-                      placeholder="Add a player you're bringing"
-                    />
-                    <button className="btn btn-primary btn-icon-square" type="submit"><Plus size={15} /></button>
-                  </form>
-                )}
-
-                {memberIsMe && !memberIsHost && (
+        {tab === "details" ? (
+          <div className="body-scroll" style={{ padding: 0 }}>
+            {(event.description || isHost) && (
+              <div className="card" style={{ margin: "16px 20px" }}>
+                <div className="field-label" style={{ marginBottom: 6 }}>About this event</div>
+                {isHost && editingDescription ? (
                   <>
-                    <button
-                      className="dashed-join-btn"
-                      style={{ marginTop: 10 }}
-                      onClick={() => navigate(`/event/${eventId}/topup/${member.id}`)}
-                    >
-                      <Plus size={14} /> Add a guest &middot; ₱{Number(event.price_per_player).toLocaleString()} each
+                    <textarea
+                      className="solid-input"
+                      autoFocus
+                      value={descriptionDraft}
+                      onChange={(e) => setDescriptionDraft(e.target.value)}
+                      onBlur={saveDescription}
+                      rows={4}
+                      placeholder="What to bring, skill level, format — anything players should know."
+                      style={{ resize: "vertical", fontFamily: "var(--font-body)", fontSize: 13 }}
+                    />
+                    <button className="btn btn-primary btn-small" style={{ marginTop: 8 }} onClick={saveDescription}>
+                      Save
                     </button>
-                    {event.allow_leave !== false ? (
-                      <button
-                        className="btn btn-outline-coral btn-small"
-                        style={{ width: "100%", marginTop: 8 }}
-                        onClick={() => leaveEvent(member.id)}
-                      >
-                        Leave event
-                      </button>
-                    ) : (
-                      <div style={{ fontSize: 10.5, color: "var(--fade)", textAlign: "center", marginTop: 8 }}>
-                        The host has locked the roster — message them to be removed.
-                      </div>
-                    )}
                   </>
+                ) : event.description ? (
+                  <div
+                    style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.5, whiteSpace: "pre-wrap", cursor: isHost ? "pointer" : "default" }}
+                    onClick={() => isHost && setEditingDescription(true)}
+                  >
+                    {event.description}
+                    {isHost && <span style={{ fontSize: 10, color: "var(--fade)", marginLeft: 6 }}>edit</span>}
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setEditingDescription(true)}
+                    style={{ background: "none", border: "none", color: "var(--green)", fontSize: 12.5, fontWeight: 700, padding: 0, cursor: "pointer" }}
+                  >
+                    + Add a description
+                  </button>
                 )}
               </div>
-            );
-          })}
+            )}
 
-          {requests.length > 0 && (
-            <>
-              <div className="section-title" style={{ marginTop: 16 }}>PENDING REQUESTS &middot; {requests.length}</div>
-              {requests.map((r) => {
-                const isTopUp = !!r.member_id;
-                const count = isTopUp ? (r.guest_names?.length || 0) : 1 + (r.guest_names?.length || 0);
-                return (
-                  <div key={r.id} className="request-card">
-                    <div className="member-name">{r.name}</div>
-                    <div style={{ fontSize: 11.5, color: "#8a9a93", marginTop: 2 }}>
-                      {isTopUp
-                        ? `+${count} more guest${count !== 1 ? "s" : ""} · ₱${Number(r.amount).toLocaleString()}`
-                        : `${count} players · ₱${Number(r.amount).toLocaleString()}`}
-                    </div>
-                    {r.status === "pending_approval" ? (
-                      <div className="status-line paid"><Check size={12} /> Payment sent &middot; awaiting host approval</div>
-                    ) : (
-                      <div className="status-line waiting"><Clock size={12} /> Awaiting payment</div>
-                    )}
-                    {isHost && r.status === "pending_approval" && (
-                      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                        <button className="btn btn-primary btn-small" onClick={() => approveRequest(r.id)}>Approve</button>
-                        <button className="btn btn-outline-coral btn-small" onClick={() => declineRequest(r.id)}>Decline</button>
-                      </div>
-                    )}
-                    {r.user_id === session.user.id && (
-                      <button
-                        className="btn btn-outline-coral btn-small"
-                        style={{ width: "100%", marginTop: 10 }}
-                        onClick={() => withdrawRequest(r.id)}
-                      >
-                        Withdraw request
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </>
-          )}
-
-          {!isMember && !hasPendingRequest && (
-            <button className="dashed-join-btn" onClick={() => navigate(`/event/${eventId}/join`)}>
-              <UserPlus size={14} /> Join this event
-            </button>
-          )}
-        </div>
-
-        <div className="total-bar">
-          {isHost ? (
-            <>
-              <div className="row-mono"><span>{totalPlayers} confirmed × ₱{Number(event.price_per_player).toLocaleString()}</span></div>
-              <div className="row-total">
-                <div className="label">TOTAL COLLECTED</div>
-                <div className="amount">₱{totalPrice.toLocaleString()}</div>
+            <div className="detail-row">
+              <div className="icon-col"><Calendar size={18} /></div>
+              <div className="content">
+                <div className="headline">{formatEventDateLong(event.event_date)}</div>
+                {duration && <div className="subline">{duration}</div>}
+                <a className="action-link" href={googleCalendarUrl(event)} target="_blank" rel="noopener noreferrer">
+                  Add to calendar
+                </a>
               </div>
-            </>
-          ) : (
+            </div>
+
+            <div className="detail-row">
+              <div className="icon-col"><MapPin size={18} /></div>
+              <div className="content">
+                <div className="headline">{event.location || (isHost ? "No location set" : "Location TBA")}</div>
+                {event.location_map_url && (
+                  <a className="action-link" href={event.location_map_url} target="_blank" rel="noopener noreferrer" style={{ display: "block" }}>
+                    Show in maps
+                  </a>
+                )}
+                {isHost && (
+                  editingMapUrl ? (
+                    <input
+                      type="url"
+                      autoFocus
+                      value={mapUrlDraft}
+                      onChange={(e) => setMapUrlDraft(e.target.value)}
+                      onBlur={saveMapUrl}
+                      onKeyDown={(e) => e.key === "Enter" && saveMapUrl()}
+                      placeholder="https://maps.app.goo.gl/..."
+                      className="dashed-input"
+                      style={{ marginTop: 6, fontSize: 12 }}
+                    />
+                  ) : (
+                    <button className="action-link" onClick={() => setEditingMapUrl(true)}>
+                      {event.location_map_url ? "edit map link" : "+ add Google Maps link"}
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+
+            <div className="detail-row">
+              <div className="icon-col"><DollarSign size={18} /></div>
+              <div className="content">
+                {isHost && editingPrice ? (
+                  <input
+                    type="number"
+                    autoFocus
+                    value={priceDraft}
+                    onChange={(e) => setPriceDraft(e.target.value)}
+                    onBlur={savePrice}
+                    onKeyDown={(e) => e.key === "Enter" && savePrice()}
+                    className="dashed-input"
+                    style={{ fontSize: 13 }}
+                  />
+                ) : (
+                  <div className="headline" onClick={() => isHost && setEditingPrice(true)} style={{ cursor: isHost ? "pointer" : "default" }}>
+                    Per player &middot; ₱{Number(event.price_per_player).toLocaleString()}
+                    {isHost && <span style={{ fontSize: 10, color: "var(--fade)", marginLeft: 6 }}>edit</span>}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="detail-row" style={{ borderBottom: isHost ? "1px solid var(--line)" : "none" }}>
+              <div className="icon-col"><Users size={18} /></div>
+              <div className="content">
+                {isHost && editingMax ? (
+                  <input
+                    type="number"
+                    autoFocus
+                    min="1"
+                    value={maxDraft}
+                    placeholder="No limit"
+                    onChange={(e) => setMaxDraft(e.target.value)}
+                    onBlur={saveMaxPlayers}
+                    onKeyDown={(e) => e.key === "Enter" && saveMaxPlayers()}
+                    className="dashed-input"
+                    style={{ fontSize: 13 }}
+                  />
+                ) : (
+                  <div className="headline" onClick={() => isHost && setEditingMax(true)} style={{ cursor: isHost ? "pointer" : "default" }}>
+                    {event.max_players ? `${totalPlayers} / ${event.max_players} players` : `${totalPlayers} players \u00B7 no limit`}
+                    {isHost && <span style={{ fontSize: 10, color: "var(--fade)", marginLeft: 6 }}>edit</span>}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {isHost && (
+              <div className="detail-row" style={{ alignItems: "center" }}>
+                <div className="icon-col"><Tag size={18} /></div>
+                <div className="content" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div className="headline">Players can leave</div>
+                  <button
+                    onClick={toggleAllowLeave}
+                    style={{
+                      background: event.allow_leave !== false ? "var(--green)" : "var(--line)",
+                      color: event.allow_leave !== false ? "#fff" : "var(--fade)",
+                      border: "none", borderRadius: 999, padding: "5px 14px", fontSize: 11.5, fontWeight: 700, cursor: "pointer",
+                    }}
+                  >
+                    {event.allow_leave !== false ? "On" : "Off"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="body-scroll">
+            <div className="section-title"><Users size={15} /> CONFIRMED &middot; {totalPlayers}</div>
+
+            {members.map((member) => {
+              const memberIsHost = member.is_host;
+              const memberIsMe = member.user_id === session.user.id;
+              return (
+                <div key={member.id} className="card">
+                  <div className="member-row">
+                    <div className={`avatar ${memberIsHost ? "host" : "member"}`}>{initials(member.name)}</div>
+                    <div>
+                      <div className="member-name">{member.name}</div>
+                      <div className="member-sub">{memberIsHost ? "Host · logged in" : "Confirmed · paid"}</div>
+                    </div>
+                  </div>
+
+                  {member.guests?.length > 0 && (
+                    <div className="guest-list">
+                      {member.guests.map((g) => {
+                        const canManage = (memberIsHost && isHost) || (memberIsMe && !memberIsHost);
+                        const canDelete = memberIsHost && isHost;
+                        const isEditing = editingGuestId === g.id;
+                        return (
+                          <div key={g.id} className="guest-row">
+                            {isEditing ? (
+                              <>
+                                <div className="left" style={{ flex: 1 }}>
+                                  <div className="avatar guest">{initials(guestEditDraft)}</div>
+                                  <input
+                                    className="dashed-input"
+                                    style={{ padding: "4px 8px", fontSize: 13 }}
+                                    autoFocus
+                                    value={guestEditDraft}
+                                    onChange={(e) => setGuestEditDraft(e.target.value)}
+                                    onKeyDown={(e) => e.key === "Enter" && editGuestName(g.id)}
+                                  />
+                                </div>
+                                <button className="icon-btn" style={{ color: "var(--green)" }} onClick={() => editGuestName(g.id)}>
+                                  <Check size={14} />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <div className="left">
+                                  <div className="avatar guest">{initials(g.name)}</div>
+                                  <span className="name">{g.name}</span>
+                                  <span className="tag">no account</span>
+                                </div>
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  {canManage && (
+                                    <button
+                                      className="icon-btn"
+                                      style={{ color: "var(--fade)" }}
+                                      onClick={() => { setEditingGuestId(g.id); setGuestEditDraft(g.name); }}
+                                    >
+                                      <Pencil size={13} />
+                                    </button>
+                                  )}
+                                  {canDelete && (
+                                    <button className="icon-btn" style={{ color: "#ff6152" }} onClick={() => removeGuest(g.id)}>
+                                      <X size={13} />
+                                    </button>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {memberIsHost && isHost && (
+                    <form className="dashed-row" onSubmit={(e) => addGuestTo(member.id, e)}>
+                      <input
+                        className="dashed-input"
+                        value={guestInputs[member.id] || ""}
+                        onChange={(e) => setGuestInputs((g) => ({ ...g, [member.id]: e.target.value }))}
+                        placeholder="Add a player you're bringing"
+                      />
+                      <button className="btn btn-primary btn-icon-square" type="submit"><Plus size={15} /></button>
+                    </form>
+                  )}
+
+                  {memberIsMe && !memberIsHost && (
+                    <>
+                      <button
+                        className="dashed-join-btn"
+                        style={{ marginTop: 10 }}
+                        onClick={() => navigate(`/event/${eventId}/topup/${member.id}`)}
+                      >
+                        <Plus size={14} /> Add a guest &middot; ₱{Number(event.price_per_player).toLocaleString()} each
+                      </button>
+                      {event.allow_leave !== false ? (
+                        <button
+                          className="btn btn-outline-coral btn-small"
+                          style={{ width: "100%", marginTop: 8 }}
+                          onClick={() => leaveEvent(member.id)}
+                        >
+                          Leave event
+                        </button>
+                      ) : (
+                        <div style={{ fontSize: 10.5, color: "var(--fade)", textAlign: "center", marginTop: 8 }}>
+                          The host has locked the roster — message them to be removed.
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+
+            {requests.length > 0 && (
+              <>
+                <div className="section-title" style={{ marginTop: 16 }}>PENDING REQUESTS &middot; {requests.length}</div>
+                {requests.map((r) => {
+                  const isTopUp = !!r.member_id;
+                  const count = isTopUp ? (r.guest_names?.length || 0) : 1 + (r.guest_names?.length || 0);
+                  return (
+                    <div key={r.id} className="request-card">
+                      <div className="member-name">{r.name}</div>
+                      <div style={{ fontSize: 11.5, color: "#8a9a89", marginTop: 2 }}>
+                        {isTopUp
+                          ? `+${count} more guest${count !== 1 ? "s" : ""} · ₱${Number(r.amount).toLocaleString()}`
+                          : `${count} players · ₱${Number(r.amount).toLocaleString()}`}
+                      </div>
+                      {r.status === "pending_approval" ? (
+                        <div className="status-line paid"><Check size={12} /> Payment sent &middot; awaiting host approval</div>
+                      ) : (
+                        <div className="status-line waiting"><Clock size={12} /> Awaiting payment</div>
+                      )}
+                      {isHost && r.status === "pending_approval" && (
+                        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                          <button className="btn btn-primary btn-small" onClick={() => approveRequest(r.id)}>Approve</button>
+                          <button className="btn btn-outline-coral btn-small" onClick={() => declineRequest(r.id)}>Decline</button>
+                        </div>
+                      )}
+                      {r.user_id === session.user.id && (
+                        <button
+                          className="btn btn-outline-coral btn-small"
+                          style={{ width: "100%", marginTop: 10 }}
+                          onClick={() => withdrawRequest(r.id)}
+                        >
+                          Withdraw request
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        )}
+
+        {isHost ? (
+          <div className="total-bar">
+            <div className="row-mono"><span>{totalPlayers} confirmed × ₱{Number(event.price_per_player).toLocaleString()}</span></div>
+            <div className="row-total">
+              <div className="label">TOTAL COLLECTED</div>
+              <div className="amount">₱{totalPrice.toLocaleString()}</div>
+            </div>
+          </div>
+        ) : isMember ? (
+          <div className="total-bar">
             <div className="row-total">
               <div className="label">PLAYERS CONFIRMED</div>
               <div className="amount">
                 {totalPlayers}{event.max_players ? ` / ${event.max_players}` : ""}
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        ) : hasPendingRequest ? (
+          <div className="footer-actions" style={{ justifyContent: "center" }}>
+            <div style={{ fontSize: 12.5, color: "var(--fade)", textAlign: "center", padding: "10px 0" }}>
+              Your request is pending host approval — see Participants for details.
+            </div>
+          </div>
+        ) : (
+          <div className="footer-actions">
+            <button className="btn btn-outline-coral" onClick={() => navigate("/")}>Can't go</button>
+            <button className="btn btn-accent" onClick={() => navigate(`/event/${eventId}/join`)}>
+              Request to join
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

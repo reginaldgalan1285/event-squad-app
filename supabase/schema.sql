@@ -446,3 +446,9 @@ create policy "avatar_select_public" on storage.objects
 -- clickable link instead of (or alongside) the plain text address.
 -- ============================================================
 alter table events add column location_map_url text;
+
+-- ============================================================
+-- End time and a free-text description for the event.
+-- ============================================================
+alter table events add column end_time timestamptz;
+alter table events add column description text;

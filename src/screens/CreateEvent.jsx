@@ -9,6 +9,8 @@ export default function CreateEvent({ session }) {
   const [sport, setSport] = useState("Pickleball");
   const [title, setTitle] = useState("");
   const [eventDate, setEventDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
   const [mapUrl, setMapUrl] = useState("");
   const [price, setPrice] = useState(150);
@@ -26,6 +28,10 @@ export default function CreateEvent({ session }) {
   async function handleCreate(e) {
     e.preventDefault();
     if (!title.trim() || !eventDate || !hostName.trim()) return;
+    if (endDate && new Date(endDate) <= new Date(eventDate)) {
+      setError("End time must be after the start time.");
+      return;
+    }
     setCreating(true);
     setError("");
 
@@ -36,6 +42,8 @@ export default function CreateEvent({ session }) {
         sport,
         title: title.trim(),
         event_date: new Date(eventDate).toISOString(),
+        end_time: endDate ? new Date(endDate).toISOString() : null,
+        description: description.trim() || null,
         location: location.trim(),
         location_map_url: mapUrl.trim() || null,
         price_per_player: Number(price) || 0,
@@ -99,6 +107,9 @@ export default function CreateEvent({ session }) {
             <div className="field-label" style={{ marginTop: 14 }}>Date & time</div>
             <input className="solid-input" type="datetime-local" value={eventDate} onChange={(e) => setEventDate(e.target.value)} required />
 
+            <div className="field-label" style={{ marginTop: 14 }}>End time (optional)</div>
+            <input className="solid-input" type="datetime-local" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+
             <div className="field-label" style={{ marginTop: 14 }}>Location</div>
             <input className="solid-input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Tagbilaran Sports Hub" />
 
@@ -117,6 +128,16 @@ export default function CreateEvent({ session }) {
 
             <div className="field-label" style={{ marginTop: 14 }}>Max players (optional)</div>
             <input className="solid-input" type="number" value={maxPlayers} onChange={(e) => setMaxPlayers(e.target.value)} min="1" placeholder="Leave blank for no limit" />
+
+            <div className="field-label" style={{ marginTop: 14 }}>Description (optional)</div>
+            <textarea
+              className="solid-input"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What to bring, skill level, format — anything players should know."
+              rows={4}
+              style={{ resize: "vertical", fontFamily: "var(--font-body)" }}
+            />
 
             <button className="btn btn-primary btn-block" style={{ marginTop: 20 }} type="submit" disabled={creating}>
               {creating ? "Creating..." : "Create event"}

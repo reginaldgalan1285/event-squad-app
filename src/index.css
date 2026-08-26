@@ -420,6 +420,46 @@ body {
   font-size: 11.5px; padding: 3px 8px; border-radius: 8px; white-space: nowrap;
 }
 
+/* ---------- Event screen tabs + detail rows ---------- */
+.event-tabs {
+  display: flex;
+  gap: 22px;
+  padding: 12px 20px 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--white);
+}
+.event-tab {
+  background: none; border: none; padding: 0 0 10px; font-size: 12.5px; font-weight: 700;
+  color: var(--fade); cursor: pointer; letter-spacing: 0.3px; text-transform: uppercase;
+  border-bottom: 2px solid transparent;
+}
+.event-tab.selected { color: var(--ink); border-bottom-color: var(--green); }
+
+.detail-row {
+  display: flex;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.detail-row .icon-col { color: var(--green); flex-shrink: 0; padding-top: 2px; }
+.detail-row .content { flex: 1; min-width: 0; }
+.detail-row .headline { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.detail-row .subline { font-size: 12px; color: var(--fade); margin-top: 2px; }
+.detail-row .action-link {
+  background: none; border: none; color: var(--green); font-size: 12px; font-weight: 700;
+  padding: 0; margin-top: 6px; cursor: pointer; text-decoration: underline;
+}
+
+.footer-actions {
+  display: flex;
+  gap: 10px;
+  padding: 14px 20px 20px;
+  flex-shrink: 0;
+  background: var(--white);
+  border-top: 1px solid var(--line);
+}
+.footer-actions .btn { flex: 1; padding: 13px 0; border-radius: 14px; font-size: 13.5px; }
+
 /* ---------- Settings ---------- */
 .settings-top {
   display: flex;
