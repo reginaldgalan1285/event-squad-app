@@ -83,6 +83,7 @@ export default function Profile({ session }) {
   if (loading) {
     return (
       <div className="app-shell">
+        <img src="/event-squad-wordmark.svg" alt="Event Squad" className="brand-strip" />
         <div className="phone" style={{ alignItems: "center", justifyContent: "center" }}>Loading...</div>
       </div>
     );
@@ -90,6 +91,7 @@ export default function Profile({ session }) {
 
   return (
     <div className="app-shell">
+      <img src="/event-squad-wordmark.svg" alt="Event Squad" className="brand-strip" />
       <div className="phone">
         <div className="header">
           <div className="header-row" style={{ justifyContent: "space-between" }}>

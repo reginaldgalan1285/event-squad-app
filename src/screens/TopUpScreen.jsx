@@ -75,6 +75,7 @@ export default function TopUpScreen({ session }) {
 
   return (
     <div className="app-shell">
+      <img src="/event-squad-wordmark.svg" alt="Event Squad" className="brand-strip" />
       <div className="phone">
         <div className="header">
           <div className="header-row">

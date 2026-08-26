@@ -61,6 +61,7 @@ export default function Dashboard({ session }) {
 
   return (
     <div className="app-shell">
+      <img src="/event-squad-wordmark.svg" alt="Event Squad" className="brand-strip" />
       <div className="phone">
         <div className="dash-topbar">
           <div className="dash-greeting" style={{ cursor: "pointer" }} onClick={() => navigate("/profile")}>

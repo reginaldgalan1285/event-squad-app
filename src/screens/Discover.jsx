@@ -65,6 +65,7 @@ export default function Discover() {
 
   return (
     <div className="app-shell">
+      <img src="/event-squad-wordmark.svg" alt="Event Squad" className="brand-strip" />
       <div className="phone">
         <div className="header" style={{ paddingBottom: 0 }}>
           <div className="header-row">
