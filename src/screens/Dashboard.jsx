@@ -6,7 +6,7 @@ import { initials } from "../lib/constants";
 
 // Tiles with no real screen behind them yet — tapping just surfaces that,
 // same idea as a disabled nav item, rather than pretending it works.
-const SOON_TILES = ["My network", "History", "Statistics"];
+const SOON_TILES = ["History", "Statistics"];
 
 export default function Dashboard({ session }) {
   const navigate = useNavigate();
@@ -51,7 +51,7 @@ export default function Dashboard({ session }) {
   const tiles = [
     { label: "Discover", icon: Compass, onClick: () => navigate("/discover") },
     { label: "Create event", icon: PlusCircle, onClick: () => navigate("/create") },
-    { label: "My network", icon: Users, onClick: () => tapSoon("My network") },
+    { label: "People", icon: Users, onClick: () => navigate("/discover?tab=people") },
     { label: "History", icon: Clock3, onClick: () => tapSoon("History") },
     { label: "Statistics", icon: BarChart3, onClick: () => tapSoon("Statistics") },
     { label: "Settings", icon: SettingsIcon, onClick: () => navigate("/settings") },

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, MapPin } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { initials } from "../lib/constants";
@@ -21,9 +21,10 @@ function sameDay(a, b) {
 
 export default function Discover() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const days = useMemo(() => buildNextDays(7), []);
   const [selectedDay, setSelectedDay] = useState(days[0]);
-  const [tab, setTab] = useState("meets");
+  const [tab, setTab] = useState(searchParams.get("tab") === "people" ? "people" : "meets");
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [people, setPeople] = useState(null);
