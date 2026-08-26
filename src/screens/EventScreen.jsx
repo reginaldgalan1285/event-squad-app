@@ -6,8 +6,8 @@ import {
 } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import {
-  SPORTS, initials, formatEventHeaderDate, formatEventDateLong,
-  formatDuration, googleCalendarUrl,
+  SPORTS, initials, formatEventHeaderDate, formatEventDateTimeFull,
+  formatDuration, googleCalendarUrl, toDatetimeLocalValue,
 } from "../lib/constants";
 
 function countFor(entity) {
@@ -35,6 +35,12 @@ export default function EventScreen({ session }) {
   const [mapUrlDraft, setMapUrlDraft] = useState("");
   const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [editingDateTime, setEditingDateTime] = useState(false);
+  const [startDraft, setStartDraft] = useState("");
+  const [endDraft, setEndDraft] = useState("");
+  const [dateTimeError, setDateTimeError] = useState("");
+  const [editingLocation, setEditingLocation] = useState(false);
+  const [locationDraft, setLocationDraft] = useState("");
   const [copied, setCopied] = useState(false);
 
   const isHost = event?.host_id === session.user.id;
@@ -49,6 +55,9 @@ export default function EventScreen({ session }) {
       setMaxDraft(eventData.max_players ?? "");
       setMapUrlDraft(eventData.location_map_url ?? "");
       setDescriptionDraft(eventData.description ?? "");
+      setStartDraft(toDatetimeLocalValue(eventData.event_date));
+      setEndDraft(toDatetimeLocalValue(eventData.end_time));
+      setLocationDraft(eventData.location ?? "");
     }
 
     const { data: memberData } = await supabase
@@ -121,6 +130,33 @@ export default function EventScreen({ session }) {
   async function saveDescription() {
     await supabase.from("events").update({ description: descriptionDraft.trim() || null }).eq("id", eventId);
     setEditingDescription(false);
+    await loadAll();
+  }
+
+  async function saveDateTime() {
+    if (!startDraft) {
+      setDateTimeError("Start time is required.");
+      return;
+    }
+    if (endDraft && new Date(endDraft) <= new Date(startDraft)) {
+      setDateTimeError("End time must be after the start time.");
+      return;
+    }
+    setDateTimeError("");
+    await supabase
+      .from("events")
+      .update({
+        event_date: new Date(startDraft).toISOString(),
+        end_time: endDraft ? new Date(endDraft).toISOString() : null,
+      })
+      .eq("id", eventId);
+    setEditingDateTime(false);
+    await loadAll();
+  }
+
+  async function saveLocation() {
+    await supabase.from("events").update({ location: locationDraft.trim() || null }).eq("id", eventId);
+    setEditingLocation(false);
     await loadAll();
   }
 
@@ -293,8 +329,42 @@ export default function EventScreen({ session }) {
             <div className="detail-row">
               <div className="icon-col"><Calendar size={18} /></div>
               <div className="content">
-                <div className="headline">{formatEventDateLong(event.event_date)}</div>
-                {duration && <div className="subline">{duration}</div>}
+                {isHost && editingDateTime ? (
+                  <>
+                    <div className="field-label" style={{ marginBottom: 4 }}>Start</div>
+                    <input
+                      type="datetime-local"
+                      className="dashed-input"
+                      style={{ fontSize: 13 }}
+                      value={startDraft}
+                      onChange={(e) => setStartDraft(e.target.value)}
+                    />
+                    <div className="field-label" style={{ margin: "10px 0 4px" }}>End (optional)</div>
+                    <input
+                      type="datetime-local"
+                      className="dashed-input"
+                      style={{ fontSize: 13 }}
+                      value={endDraft}
+                      onChange={(e) => setEndDraft(e.target.value)}
+                    />
+                    {dateTimeError && <div className="error-text">{dateTimeError}</div>}
+                    <button className="btn btn-primary btn-small" style={{ marginTop: 10 }} onClick={saveDateTime}>
+                      Save
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div
+                      className="headline"
+                      onClick={() => isHost && setEditingDateTime(true)}
+                      style={{ cursor: isHost ? "pointer" : "default" }}
+                    >
+                      {formatEventDateTimeFull(event.event_date, event.end_time)}
+                      {isHost && <span style={{ fontSize: 10, color: "var(--fade)", marginLeft: 6 }}>edit</span>}
+                    </div>
+                    {duration && <div className="subline">{duration}</div>}
+                  </>
+                )}
                 <a className="action-link" href={googleCalendarUrl(event)} target="_blank" rel="noopener noreferrer">
                   Add to calendar
                 </a>
@@ -304,7 +374,27 @@ export default function EventScreen({ session }) {
             <div className="detail-row">
               <div className="icon-col"><MapPin size={18} /></div>
               <div className="content">
-                <div className="headline">{event.location || (isHost ? "No location set" : "Location TBA")}</div>
+                {isHost && editingLocation ? (
+                  <input
+                    className="dashed-input"
+                    autoFocus
+                    style={{ fontSize: 13 }}
+                    value={locationDraft}
+                    onChange={(e) => setLocationDraft(e.target.value)}
+                    onBlur={saveLocation}
+                    onKeyDown={(e) => e.key === "Enter" && saveLocation()}
+                    placeholder="e.g. Tagbilaran Sports Hub"
+                  />
+                ) : (
+                  <div
+                    className="headline"
+                    onClick={() => isHost && setEditingLocation(true)}
+                    style={{ cursor: isHost ? "pointer" : "default" }}
+                  >
+                    {event.location || (isHost ? "No location set" : "Location TBA")}
+                    {isHost && <span style={{ fontSize: 10, color: "var(--fade)", marginLeft: 6 }}>edit</span>}
+                  </div>
+                )}
                 {event.location_map_url && (
                   <a className="action-link" href={event.location_map_url} target="_blank" rel="noopener noreferrer" style={{ display: "block" }}>
                     Show in maps

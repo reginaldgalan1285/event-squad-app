@@ -25,12 +25,29 @@ export function formatEventHeaderDate(dateStr) {
   return `${datePart} @${timePart}`;
 }
 
-// e.g. "Wed August 26 at 2:00 PM" — used for the calendar row's headline.
-export function formatEventDateLong(dateStr) {
-  const d = new Date(dateStr);
-  const datePart = d.toLocaleDateString(undefined, { weekday: "short", month: "long", day: "numeric" });
-  const timePart = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  return `${datePart} at ${timePart}`;
+// e.g. "Wed, August 26 at 2:00 PM" or, with an end time,
+// "Wed, August 26 · 2:00 PM – 4:00 PM" (crossing midnight shows both dates).
+export function formatEventDateTimeFull(startStr, endStr) {
+  const start = new Date(startStr);
+  const datePart = start.toLocaleDateString(undefined, { weekday: "short", month: "long", day: "numeric" });
+  const startTime = start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (!endStr) return `${datePart} at ${startTime}`;
+  const end = new Date(endStr);
+  const endTime = end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (start.toDateString() === end.toDateString()) {
+    return `${datePart} \u00B7 ${startTime} \u2013 ${endTime}`;
+  }
+  const endDatePart = end.toLocaleDateString(undefined, { weekday: "short", month: "long", day: "numeric" });
+  return `${datePart}, ${startTime} \u2013 ${endDatePart}, ${endTime}`;
+}
+
+// Converts an ISO timestamp to the "YYYY-MM-DDTHH:mm" value a
+// <input type="datetime-local"> needs, in local time.
+export function toDatetimeLocalValue(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 // e.g. "2 hours" or "90 min" — only meaningful when an end time exists.
