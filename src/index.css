@@ -216,6 +216,7 @@ body {
 .btn-accent { background: var(--citrus); color: var(--ink); }
 .btn-outline-coral { background: transparent; color: var(--coral); border: 1px solid var(--coral); }
 .btn-disabled { background: rgba(255, 255, 255, 0.2); color: rgba(255, 255, 255, 0.5); cursor: not-allowed; }
+.btn-disabled-light { background: var(--line); color: var(--fade); cursor: not-allowed; }
 .btn-block { width: 100%; padding: 13px 0; border-radius: 14px; font-size: 14px; }
 .btn-small { flex: 1; padding: 8px 0; border-radius: 10px; font-size: 12.5px; }
 
@@ -459,6 +460,16 @@ body {
   border-top: 1px solid var(--line);
 }
 .footer-actions .btn { flex: 1; padding: 13px 0; border-radius: 14px; font-size: 13.5px; }
+
+.capacity-banner {
+  background: #fff0ee;
+  color: var(--coral);
+  border-bottom: 1px solid #ffd9d3;
+  padding: 10px 20px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
 
 /* ---------- Settings ---------- */
 .settings-top {

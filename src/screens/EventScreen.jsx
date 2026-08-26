@@ -95,6 +95,7 @@ export default function EventScreen({ session }) {
 
   const totalPlayers = members.reduce((sum, m) => sum + countFor(m), 0);
   const totalPrice = totalPlayers * Number(event?.price_per_player || 0);
+  const atCapacity = event?.max_players != null && totalPlayers >= event.max_players;
 
   async function handleSportChange(newSport) {
     await supabase.from("events").update({ sport: newSport }).eq("id", eventId);
@@ -285,6 +286,12 @@ export default function EventScreen({ session }) {
             Participants &middot; {totalPlayers}
           </button>
         </div>
+
+        {atCapacity && (
+          <div className="capacity-banner">
+            This event has reached its player limit ({event.max_players}/{event.max_players}).
+          </div>
+        )}
 
         {tab === "details" ? (
           <div className="body-scroll" style={{ padding: 0 }}>
@@ -670,8 +677,12 @@ export default function EventScreen({ session }) {
         ) : (
           <div className="footer-actions">
             <button className="btn btn-outline-coral" onClick={() => navigate("/")}>Can't go</button>
-            <button className="btn btn-accent" onClick={() => navigate(`/event/${eventId}/join`)}>
-              Request to join
+            <button
+              className={`btn ${atCapacity ? "btn-disabled-light" : "btn-accent"}`}
+              onClick={() => !atCapacity && navigate(`/event/${eventId}/join`)}
+              disabled={atCapacity}
+            >
+              {atCapacity ? "Event full" : "Request to join"}
             </button>
           </div>
         )}
