@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Compass, PlusCircle, Users, Clock3, BarChart3, Settings as SettingsIcon, LogOut } from "lucide-react";
+import { Compass, PlusCircle, Users, Clock3, BarChart3, Settings as SettingsIcon, LogOut, MapPin } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { initials, formatEventDate } from "../lib/constants";
 
@@ -12,6 +12,8 @@ export default function Dashboard({ session }) {
   const navigate = useNavigate();
   const [myEvents, setMyEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [upcomingEvents, setUpcomingEvents] = useState([]);
+  const [loadingUpcoming, setLoadingUpcoming] = useState(true);
   const [soonMessage, setSoonMessage] = useState("");
   const [profileName, setProfileName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState(null);
@@ -19,7 +21,10 @@ export default function Dashboard({ session }) {
   const displayName = profileName || session.user.email?.split("@")[0] || "there";
 
   useEffect(() => {
-    loadMyEvents();
+    (async () => {
+      const myIds = await loadMyEvents();
+      await loadUpcomingEvents(myIds);
+    })();
     loadProfile();
   }, []);
 
@@ -37,8 +42,24 @@ export default function Dashboard({ session }) {
       .eq("user_id", session.user.id)
       .order("joined_at", { ascending: false });
 
-    setMyEvents((data || []).filter((row) => row.events));
+    const rows = (data || []).filter((row) => row.events);
+    setMyEvents(rows);
     setLoading(false);
+    return rows.map((row) => row.events.id);
+  }
+
+  async function loadUpcomingEvents(excludeIds) {
+    setLoadingUpcoming(true);
+    const { data } = await supabase
+      .from("events")
+      .select("id, title, sport, event_date, location, price_per_player, max_players, event_members(id, guests(id))")
+      .gte("event_date", new Date().toISOString())
+      .order("event_date", { ascending: true })
+      .limit(15);
+
+    const filtered = (data || []).filter((e) => !excludeIds.includes(e.id)).slice(0, 5);
+    setUpcomingEvents(filtered);
+    setLoadingUpcoming(false);
   }
 
   function tapSoon(label) {
@@ -120,6 +141,54 @@ export default function Dashboard({ session }) {
                 <div className="role">{row.is_host ? "Host" : "Player"}</div>
               </div>
             ))
+          )}
+        </div>
+
+        <div className="section-title" style={{ padding: "6px 20px 0" }}>UPCOMING EVENTS</div>
+
+        <div style={{ padding: "10px 0 20px" }}>
+          {loadingUpcoming ? (
+            <div style={{ fontSize: 12.5, color: "var(--fade)", padding: "0 20px" }}>Loading...</div>
+          ) : upcomingEvents.length === 0 ? (
+            <div className="empty-state">
+              <div className="title">Nothing else coming up right now.</div>
+              <button className="btn btn-primary" style={{ padding: "10px 22px", borderRadius: 12 }} onClick={() => navigate("/discover")}>
+                Browse Discover
+              </button>
+            </div>
+          ) : (
+            <>
+              {upcomingEvents.map((e) => {
+                const confirmed = (e.event_members || []).reduce((sum, m) => sum + 1 + (m.guests?.length || 0), 0);
+                return (
+                  <div key={e.id} className="meet-card" onClick={() => navigate(`/event/${e.id}`)}>
+                    <div>
+                      <div className="meet-host">{e.sport}</div>
+                      <div className="meet-title">{e.title}</div>
+                      <div className="meet-meta">
+                        <span>{formatEventDate(e.event_date)}</span>
+                        {e.location && (
+                          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                            <MapPin size={11} /> {e.location}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="capacity-badge">
+                      {confirmed}{e.max_players ? `/${e.max_players}` : ""}
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ padding: "4px 20px 0", textAlign: "center" }}>
+                <button
+                  onClick={() => navigate("/discover")}
+                  style={{ background: "none", border: "none", color: "var(--green)", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}
+                >
+                  See all on Discover
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>
