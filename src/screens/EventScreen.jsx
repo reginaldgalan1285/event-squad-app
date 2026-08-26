@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { X, Plus, Users, MapPin, Calendar, UserPlus, ChevronDown, Check, Clock, LogOut, ArrowLeft, Pencil } from "lucide-react";
 import { supabase } from "../supabaseClient";
-import { SPORTS, initials } from "../lib/constants";
+import { SPORTS, initials, formatEventDateTime } from "../lib/constants";
 
 function countFor(entity) {
   return 1 + (entity.guests?.length || 0);
@@ -24,6 +24,8 @@ export default function EventScreen({ session }) {
   const [maxDraft, setMaxDraft] = useState("");
   const [editingGuestId, setEditingGuestId] = useState(null);
   const [guestEditDraft, setGuestEditDraft] = useState("");
+  const [editingMapUrl, setEditingMapUrl] = useState(false);
+  const [mapUrlDraft, setMapUrlDraft] = useState("");
 
   const isHost = event?.host_id === session.user.id;
   const isMember = members.some((m) => m.user_id === session.user.id);
@@ -35,6 +37,7 @@ export default function EventScreen({ session }) {
     if (eventData) {
       setPriceDraft(eventData.price_per_player);
       setMaxDraft(eventData.max_players ?? "");
+      setMapUrlDraft(eventData.location_map_url ?? "");
     }
 
     const { data: memberData } = await supabase
@@ -97,6 +100,12 @@ export default function EventScreen({ session }) {
 
   async function toggleAllowLeave() {
     await supabase.from("events").update({ allow_leave: !(event.allow_leave !== false) }).eq("id", eventId);
+    await loadAll();
+  }
+
+  async function saveMapUrl() {
+    await supabase.from("events").update({ location_map_url: mapUrlDraft.trim() || null }).eq("id", eventId);
+    setEditingMapUrl(false);
     await loadAll();
   }
 
@@ -193,9 +202,53 @@ export default function EventScreen({ session }) {
 
           <div className="title-display" style={{ marginTop: 8 }}>{event.title}</div>
           <div className="meta-row">
-            <span><Calendar size={13} /> {new Date(event.event_date).toLocaleString()}</span>
-            {event.location && <span><MapPin size={13} /> {event.location}</span>}
+            <span><Calendar size={13} /> {formatEventDateTime(event.event_date)}</span>
+            {event.location && (
+              <span>
+                <MapPin size={13} />{" "}
+                {event.location_map_url ? (
+                  <a
+                    href={event.location_map_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: "inherit", textDecoration: "underline" }}
+                  >
+                    {event.location}
+                  </a>
+                ) : (
+                  event.location
+                )}
+              </span>
+            )}
           </div>
+
+          {isHost && (
+            editingMapUrl ? (
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <input
+                  type="url"
+                  autoFocus
+                  value={mapUrlDraft}
+                  onChange={(e) => setMapUrlDraft(e.target.value)}
+                  onBlur={saveMapUrl}
+                  onKeyDown={(e) => e.key === "Enter" && saveMapUrl()}
+                  placeholder="https://maps.app.goo.gl/..."
+                  style={{
+                    flex: 1, fontSize: 11.5, padding: "5px 8px", borderRadius: 8,
+                    border: "1px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)",
+                    color: "#fff", outline: "none",
+                  }}
+                />
+              </div>
+            ) : (
+              <button
+                onClick={() => setEditingMapUrl(true)}
+                style={{ background: "none", border: "none", color: "rgba(255,255,255,0.6)", fontSize: 10.5, padding: 0, marginTop: 4, cursor: "pointer" }}
+              >
+                {event.location_map_url ? "edit map link" : "+ add Google Maps link"}
+              </button>
+            )
+          )}
 
           <div className="price-chip">
             <span className="label">Price per player</span>

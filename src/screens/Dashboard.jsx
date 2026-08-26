@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Compass, PlusCircle, Users, Clock3, BarChart3, Settings as SettingsIcon, LogOut } from "lucide-react";
 import { supabase } from "../supabaseClient";
-import { initials } from "../lib/constants";
+import { initials, formatEventDate } from "../lib/constants";
 
 // Tiles with no real screen behind them yet — tapping just surfaces that,
 // same idea as a disabled nav item, rather than pretending it works.
@@ -115,7 +115,7 @@ export default function Dashboard({ session }) {
               <div key={row.events.id} className="mine-card" onClick={() => navigate(`/event/${row.events.id}`)}>
                 <div>
                   <div className="name">{row.events.title}</div>
-                  <div className="sub">{row.events.sport} &middot; {new Date(row.events.event_date).toLocaleDateString()}</div>
+                  <div className="sub">{row.events.sport} &middot; {formatEventDate(row.events.event_date)}</div>
                 </div>
                 <div className="role">{row.is_host ? "Host" : "Player"}</div>
               </div>

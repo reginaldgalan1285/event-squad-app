@@ -440,3 +440,9 @@ create policy "avatar_update_own_folder" on storage.objects
 create policy "avatar_select_public" on storage.objects
   for select to public
   using (bucket_id = 'avatars');
+
+-- ============================================================
+-- Optional Google Maps link for an event's location, shown as a
+-- clickable link instead of (or alongside) the plain text address.
+-- ============================================================
+alter table events add column location_map_url text;

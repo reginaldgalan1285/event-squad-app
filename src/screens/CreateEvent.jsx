@@ -10,6 +10,7 @@ export default function CreateEvent({ session }) {
   const [title, setTitle] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [location, setLocation] = useState("");
+  const [mapUrl, setMapUrl] = useState("");
   const [price, setPrice] = useState(150);
   const [maxPlayers, setMaxPlayers] = useState("");
   const [hostName, setHostName] = useState("");
@@ -36,6 +37,7 @@ export default function CreateEvent({ session }) {
         title: title.trim(),
         event_date: new Date(eventDate).toISOString(),
         location: location.trim(),
+        location_map_url: mapUrl.trim() || null,
         price_per_player: Number(price) || 0,
         max_players: maxPlayers ? Number(maxPlayers) : null,
       })
@@ -99,6 +101,16 @@ export default function CreateEvent({ session }) {
 
             <div className="field-label" style={{ marginTop: 14 }}>Location</div>
             <input className="solid-input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Tagbilaran Sports Hub" />
+
+            <div className="field-label" style={{ marginTop: 14 }}>Google Maps link (optional)</div>
+            <input
+              className="solid-input"
+              type="url"
+              value={mapUrl}
+              onChange={(e) => setMapUrl(e.target.value)}
+              placeholder="https://maps.app.goo.gl/..."
+            />
+            <div className="helper-text">Paste the share link from Google Maps — players can tap it to get directions.</div>
 
             <div className="field-label" style={{ marginTop: 14 }}>Price per player (₱)</div>
             <input className="solid-input" type="number" value={price} onChange={(e) => setPrice(e.target.value)} min="0" />
