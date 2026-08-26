@@ -411,11 +411,22 @@ export default function EventScreen({ session }) {
         </div>
 
         <div className="total-bar">
-          <div className="row-mono"><span>{totalPlayers} confirmed × ₱{Number(event.price_per_player).toLocaleString()}</span></div>
-          <div className="row-total">
-            <div className="label">TOTAL COLLECTED</div>
-            <div className="amount">₱{totalPrice.toLocaleString()}</div>
-          </div>
+          {isHost ? (
+            <>
+              <div className="row-mono"><span>{totalPlayers} confirmed × ₱{Number(event.price_per_player).toLocaleString()}</span></div>
+              <div className="row-total">
+                <div className="label">TOTAL COLLECTED</div>
+                <div className="amount">₱{totalPrice.toLocaleString()}</div>
+              </div>
+            </>
+          ) : (
+            <div className="row-total">
+              <div className="label">PLAYERS CONFIRMED</div>
+              <div className="amount">
+                {totalPlayers}{event.max_players ? ` / ${event.max_players}` : ""}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
