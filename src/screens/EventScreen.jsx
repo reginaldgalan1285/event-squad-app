@@ -65,7 +65,15 @@ export default function EventScreen({ session }) {
       .select("*, guests(*)")
       .eq("event_id", eventId)
       .order("joined_at", { ascending: true });
-    setMembers(memberData || []);
+
+    const rows = memberData || [];
+    const userIds = [...new Set(rows.map((m) => m.user_id))];
+    let avatarMap = {};
+    if (userIds.length > 0) {
+      const { data: profileRows } = await supabase.from("profiles").select("id, avatar_url").in("id", userIds);
+      avatarMap = Object.fromEntries((profileRows || []).map((p) => [p.id, p.avatar_url]));
+    }
+    setMembers(rows.map((m) => ({ ...m, avatar_url: avatarMap[m.user_id] || null })));
 
     const { data: requestData } = await supabase
       .from("payment_requests")
@@ -506,7 +514,13 @@ export default function EventScreen({ session }) {
               return (
                 <div key={member.id} className="card">
                   <div className="member-row">
-                    <div className={`avatar ${memberIsHost ? "host" : "member"}`}>{initials(member.name)}</div>
+                    <div className={`avatar ${memberIsHost ? "host" : "member"}`} style={{ overflow: "hidden" }}>
+                      {member.avatar_url ? (
+                        <img src={member.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        initials(member.name)
+                      )}
+                    </div>
                     <div>
                       <div className="member-name">{member.name}</div>
                       <div className="member-sub">{memberIsHost ? "Host · logged in" : "Confirmed · paid"}</div>
