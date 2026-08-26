@@ -1,0 +1,23 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1B4332"/>
+      <stop offset="100%" stop-color="#0F2A1F"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <g transform="rotate(-25 256 256)">
+    <ellipse cx="215" cy="195" rx="92" ry="112" fill="#FFB627"/>
+    <ellipse cx="215" cy="195" rx="92" ry="112" fill="none" stroke="#0F2A1F" stroke-width="6" opacity="0.15"/>
+    <rect x="197" y="292" width="36" height="118" rx="16" fill="#FFB627"/>
+    <rect x="197" y="292" width="36" height="118" rx="16" fill="none" stroke="#0F2A1F" stroke-width="4" opacity="0.12"/>
+  </g>
+
+  <circle cx="345" cy="330" r="52" fill="#F7F5F0"/>
+  <circle cx="330" cy="312" r="6" fill="#16233A" opacity="0.35"/>
+  <circle cx="360" cy="312" r="6" fill="#16233A" opacity="0.35"/>
+  <circle cx="330" cy="340" r="6" fill="#16233A" opacity="0.35"/>
+  <circle cx="360" cy="340" r="6" fill="#16233A" opacity="0.35"/>
+  <circle cx="345" cy="356" r="6" fill="#16233A" opacity="0.35"/>
+</svg>

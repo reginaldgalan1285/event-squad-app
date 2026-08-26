@@ -59,7 +59,7 @@ export default function Auth() {
   return (
     <div className="auth-wrap">
       <div className="auth-card">
-        <div className="auth-title">Event Squad</div>
+        <img src="/event-squad-wordmark.svg" alt="Event Squad" style={{ height: 44, marginBottom: 4 }} />
         <div className="auth-sub">
           {mode === "signup" ? "Create an account to host or join an open play." : "Sign in to host or join an open play."}
         </div>
