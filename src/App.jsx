@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import Auth from "./screens/Auth";
 import Dashboard from "./screens/Dashboard";
@@ -12,8 +12,12 @@ import PaymentScreen from "./screens/PaymentScreen";
 import Settings from "./screens/Settings";
 import Profile from "./screens/Profile";
 
+const REDIRECT_KEY = "eventsquad_redirect_after_login";
+
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = still checking
+  const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -22,6 +26,26 @@ export default function App() {
     });
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  // While signed out, remember the exact URL being visited (e.g. a
+  // forwarded event link) so it can be restored right after sign-in.
+  useEffect(() => {
+    if (session === null) {
+      sessionStorage.setItem(REDIRECT_KEY, location.pathname + location.search);
+    }
+  }, [session, location]);
+
+  // Once a session appears, send the person back to whatever URL they
+  // originally landed on instead of always dropping them on the dashboard.
+  useEffect(() => {
+    if (session) {
+      const redirect = sessionStorage.getItem(REDIRECT_KEY);
+      if (redirect && redirect !== "/") {
+        sessionStorage.removeItem(REDIRECT_KEY);
+        navigate(redirect, { replace: true });
+      }
+    }
+  }, [session]);
 
   if (session === undefined) return null; // brief initial check, avoids an Auth flash
 
