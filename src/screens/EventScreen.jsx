@@ -290,18 +290,14 @@ export default function EventScreen({ session }) {
             )}
           </div>
 
-          <div className="price-chip" style={{ marginTop: 8 }}>
-            <span className="label">Players can leave</span>
-            {isHost ? (
+          {isHost && (
+            <div className="price-chip" style={{ marginTop: 8 }}>
+              <span className="label">Players can leave</span>
               <button onClick={toggleAllowLeave}>
                 {event.allow_leave !== false ? "On" : "Off"}
               </button>
-            ) : (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 15, fontWeight: 600, color: "var(--citrus)" }}>
-                {event.allow_leave !== false ? "Allowed" : "Locked"}
-              </span>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         <div className="body-scroll">
