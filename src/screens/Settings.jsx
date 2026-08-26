@@ -15,7 +15,6 @@ export default function Settings({ session }) {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [showAccount, setShowAccount] = useState(false);
   const [soonMessage, setSoonMessage] = useState("");
 
   useEffect(() => {
@@ -95,7 +94,7 @@ export default function Settings({ session }) {
 
         <div className="body-scroll" style={{ padding: 0 }}>
           <div className="settings-top">
-            <div className="settings-top-item" onClick={() => setShowAccount((v) => !v)}>
+            <div className="settings-top-item" onClick={() => navigate("/profile")}>
               <User size={20} />
               <div>Account</div>
             </div>
@@ -109,11 +108,6 @@ export default function Settings({ session }) {
             </div>
           </div>
 
-          {showAccount && (
-            <div style={{ padding: "0 20px 12px", fontSize: 12.5, color: "var(--fade)" }}>
-              Signed in as <strong style={{ color: "var(--ink)" }}>{session.user.email}</strong>
-            </div>
-          )}
           {soonMessage && (
             <div style={{ textAlign: "center", fontSize: 11.5, color: "var(--fade)", padding: "0 20px 12px" }}>
               {soonMessage} is coming soon

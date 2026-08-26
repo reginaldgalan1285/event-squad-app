@@ -360,3 +360,61 @@ create policy "members_delete_own" on event_members
     and is_host = false
     and exists (select 1 from events e where e.id = event_id and coalesce(e.allow_leave, true))
   );
+
+-- ============================================================
+-- Add a persistent display name to profiles, so players set it
+-- once instead of retyping "your name" on every join/create form.
+-- ============================================================
+alter table profiles add column display_name text;
+
+-- Preferred sport shown on the profile page, similar to the reference.
+alter table profiles add column preferred_sport text;
+
+-- ============================================================
+-- Auto-create a profiles row for every new signup, so the People
+-- directory shows everyone who's signed up — not just people who
+-- happened to visit Settings or Profile first.
+-- ============================================================
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id) values (new.id)
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- Backfill: create rows for anyone who already signed up before this
+-- trigger existed.
+insert into public.profiles (id)
+select id from auth.users
+on conflict (id) do nothing;
+
+-- ============================================================
+-- Pull the name entered at signup (passed as auth metadata) into
+-- the new profile row automatically. Replaces handle_new_user —
+-- works even for accounts still pending email confirmation, since
+-- metadata is set at signup time, before any session exists.
+-- ============================================================
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, display_name)
+  values (new.id, nullif(trim(new.raw_user_meta_data->>'display_name'), ''))
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;

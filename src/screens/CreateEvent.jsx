@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { supabase } from "../supabaseClient";
@@ -15,6 +15,12 @@ export default function CreateEvent({ session }) {
   const [hostName, setHostName] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    supabase.from("profiles").select("display_name").eq("id", session.user.id).maybeSingle().then(({ data }) => {
+      if (data?.display_name) setHostName(data.display_name);
+    });
+  }, []);
 
   async function handleCreate(e) {
     e.preventDefault();

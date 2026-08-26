@@ -18,6 +18,9 @@ export default function JoinScreen({ session }) {
 
   useEffect(() => {
     supabase.from("events").select("*").eq("id", eventId).single().then(({ data }) => setEvent(data));
+    supabase.from("profiles").select("display_name").eq("id", session.user.id).maybeSingle().then(({ data }) => {
+      if (data?.display_name) setName(data.display_name);
+    });
     loadConfirmedCount();
   }, [eventId]);
 

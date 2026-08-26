@@ -13,12 +13,19 @@ export default function Dashboard({ session }) {
   const [myEvents, setMyEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [soonMessage, setSoonMessage] = useState("");
+  const [profileName, setProfileName] = useState("");
 
-  const displayName = session.user.email?.split("@")[0] || "there";
+  const displayName = profileName || session.user.email?.split("@")[0] || "there";
 
   useEffect(() => {
     loadMyEvents();
+    loadProfile();
   }, []);
+
+  async function loadProfile() {
+    const { data } = await supabase.from("profiles").select("display_name").eq("id", session.user.id).maybeSingle();
+    if (data?.display_name) setProfileName(data.display_name);
+  }
 
   async function loadMyEvents() {
     setLoading(true);
@@ -54,7 +61,7 @@ export default function Dashboard({ session }) {
     <div className="app-shell">
       <div className="phone">
         <div className="dash-topbar">
-          <div className="dash-greeting">
+          <div className="dash-greeting" style={{ cursor: "pointer" }} onClick={() => navigate("/profile")}>
             <div className="dash-avatar">{initials(displayName)}</div>
             <div className="dash-name">Hi, {displayName}</div>
           </div>

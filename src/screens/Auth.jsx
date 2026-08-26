@@ -5,6 +5,7 @@ import { supabase } from "../supabaseClient";
 export default function Auth() {
   const [mode, setMode] = useState("signin"); // 'signin' | 'signup'
   const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState("");
@@ -25,9 +26,15 @@ export default function Auth() {
     }
 
     if (mode === "signup") {
+      if (!name.trim()) {
+        setBusy(false);
+        setError("Enter your name.");
+        return;
+      }
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
+        options: { data: { display_name: name.trim() } },
       });
       setBusy(false);
       if (error) {
@@ -61,7 +68,20 @@ export default function Auth() {
           <div style={{ fontSize: 13.5 }}>{message}</div>
         ) : (
           <form onSubmit={handleSubmit}>
-            <div className="field-label">Email</div>
+            {mode === "signup" && (
+              <>
+                <div className="field-label">Your name</div>
+                <input
+                  className="solid-input"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. RG Galan"
+                  required
+                />
+              </>
+            )}
+
+            <div className="field-label" style={{ marginTop: mode === "signup" ? 14 : 0 }}>Email</div>
             <input
               className="solid-input"
               type="email"

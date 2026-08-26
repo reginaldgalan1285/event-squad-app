@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, MapPin } from "lucide-react";
 import { supabase } from "../supabaseClient";
+import { initials } from "../lib/constants";
 
 function buildNextDays(count = 7) {
   const days = [];
@@ -25,11 +26,24 @@ export default function Discover() {
   const [tab, setTab] = useState("meets");
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [people, setPeople] = useState(null);
   const [soonMessage, setSoonMessage] = useState("");
 
   useEffect(() => {
     loadEvents();
   }, []);
+
+  useEffect(() => {
+    if (tab === "people" && people === null) loadPeople();
+  }, [tab]);
+
+  async function loadPeople() {
+    const { data } = await supabase
+      .from("profiles")
+      .select("id, display_name, preferred_sport")
+      .order("display_name", { ascending: true, nullsFirst: false });
+    setPeople(data || []);
+  }
 
   async function loadEvents() {
     setLoading(true);
@@ -61,7 +75,7 @@ export default function Discover() {
         <div className="discover-tabs">
           <button className={`discover-tab ${tab === "meets" ? "selected" : ""}`} onClick={() => setTab("meets")}>Meets</button>
           <button className="discover-tab" onClick={() => tapSoon("Clubs")}>Clubs</button>
-          <button className="discover-tab" onClick={() => tapSoon("People")}>People</button>
+          <button className={`discover-tab ${tab === "people" ? "selected" : ""}`} onClick={() => setTab("people")}>People</button>
         </div>
 
         {soonMessage && (
@@ -70,56 +84,82 @@ export default function Discover() {
           </div>
         )}
 
-        <div className="date-strip">
-          {days.map((d) => {
-            const selected = sameDay(d, selectedDay);
-            return (
-              <div key={d.toISOString()} className={`date-pill ${selected ? "selected" : ""}`} onClick={() => setSelectedDay(d)}>
-                <div className="dow">{d.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase()}</div>
-                <div className="dom">{d.getDate()}</div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="body-scroll" style={{ padding: "0 0 10px" }}>
-          {loading ? (
-            <div style={{ fontSize: 12.5, color: "var(--fade)", padding: "0 20px" }}>Loading...</div>
-          ) : dayEvents.length === 0 ? (
-            <div className="empty-state">
-              <div className="title">No meets on this day yet.</div>
-              <button className="btn btn-primary" style={{ padding: "10px 22px", borderRadius: 12 }} onClick={() => navigate("/create")}>
-                Create one
-              </button>
-            </div>
-          ) : (
-            dayEvents.map((e) => {
-              const confirmed = (e.event_members || []).reduce(
-                (sum, m) => sum + 1 + (m.guests?.length || 0),
-                0
-              );
+        {tab === "meets" && (
+          <div className="date-strip">
+            {days.map((d) => {
+              const selected = sameDay(d, selectedDay);
               return (
-                <div key={e.id} className="meet-card" onClick={() => navigate(`/event/${e.id}`)}>
-                  <div>
-                    <div className="meet-host">{e.sport}</div>
-                    <div className="meet-title">{e.title}</div>
-                    <div className="meet-meta">
-                      <span>{new Date(e.event_date).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
-                      {e.location && (
-                        <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                          <MapPin size={11} /> {e.location}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="capacity-badge">
-                    {confirmed}{e.max_players ? `/${e.max_players}` : ""}
-                  </div>
+                <div key={d.toISOString()} className={`date-pill ${selected ? "selected" : ""}`} onClick={() => setSelectedDay(d)}>
+                  <div className="dow">{d.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase()}</div>
+                  <div className="dom">{d.getDate()}</div>
                 </div>
               );
-            })
-          )}
-        </div>
+            })}
+          </div>
+        )}
+
+        {tab === "meets" ? (
+          <div className="body-scroll" style={{ padding: "0 0 10px" }}>
+            {loading ? (
+              <div style={{ fontSize: 12.5, color: "var(--fade)", padding: "0 20px" }}>Loading...</div>
+            ) : dayEvents.length === 0 ? (
+              <div className="empty-state">
+                <div className="title">No meets on this day yet.</div>
+                <button className="btn btn-primary" style={{ padding: "10px 22px", borderRadius: 12 }} onClick={() => navigate("/create")}>
+                  Create one
+                </button>
+              </div>
+            ) : (
+              dayEvents.map((e) => {
+                const confirmed = (e.event_members || []).reduce(
+                  (sum, m) => sum + 1 + (m.guests?.length || 0),
+                  0
+                );
+                return (
+                  <div key={e.id} className="meet-card" onClick={() => navigate(`/event/${e.id}`)}>
+                    <div>
+                      <div className="meet-host">{e.sport}</div>
+                      <div className="meet-title">{e.title}</div>
+                      <div className="meet-meta">
+                        <span>{new Date(e.event_date).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+                        {e.location && (
+                          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                            <MapPin size={11} /> {e.location}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="capacity-badge">
+                      {confirmed}{e.max_players ? `/${e.max_players}` : ""}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        ) : (
+          <div className="body-scroll" style={{ padding: "14px 0 10px" }}>
+            {people === null ? (
+              <div style={{ fontSize: 12.5, color: "var(--fade)", padding: "0 20px" }}>Loading...</div>
+            ) : people.length === 0 ? (
+              <div className="empty-state">
+                <div className="title">No one's signed up yet.</div>
+              </div>
+            ) : (
+              people.map((p) => (
+                <div key={p.id} className="mine-card" style={{ margin: "0 20px 10px", cursor: "default" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div className="avatar member">{initials(p.display_name || "?")}</div>
+                    <div>
+                      <div className="name">{p.display_name || "New player"}</div>
+                      {p.preferred_sport && <div className="sub">{p.preferred_sport}</div>}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
