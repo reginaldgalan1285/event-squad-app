@@ -452,3 +452,78 @@ alter table events add column location_map_url text;
 -- ============================================================
 alter table events add column end_time timestamptz;
 alter table events add column description text;
+
+-- ============================================================
+-- Fix: join-type payment_requests (member_id was null) had no link
+-- to the event_members row they created, so when that member later
+-- left, the payment record was orphaned instead of being cleaned up
+-- the same way top-up payments already are via cascade delete.
+-- This retroactively links a join request to the member row it
+-- creates, so a future "leave" correctly removes that payment
+-- history too — same behavior top-ups already had.
+-- ============================================================
+create or replace function approve_payment_request(request_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  req payment_requests%rowtype;
+  new_member_id uuid;
+  g text;
+begin
+  select * into req from payment_requests where id = request_id;
+
+  if req.id is null then
+    raise exception 'Request not found';
+  end if;
+
+  if req.status <> 'pending_approval' then
+    raise exception 'Request is not pending approval';
+  end if;
+
+  if not exists (
+    select 1 from events e where e.id = req.event_id and e.host_id = auth.uid()
+  ) then
+    raise exception 'Only the host can approve requests';
+  end if;
+
+  if req.member_id is not null then
+    foreach g in array req.guest_names loop
+      insert into guests (member_id, name) values (req.member_id, g);
+    end loop;
+
+    update payment_requests
+    set status = 'approved', decided_at = now()
+    where id = request_id;
+  else
+    insert into event_members (event_id, user_id, name, is_host)
+    values (req.event_id, req.user_id, req.name, false)
+    returning id into new_member_id;
+
+    foreach g in array req.guest_names loop
+      insert into guests (member_id, name) values (new_member_id, g);
+    end loop;
+
+    -- Link this join request to the member row it created, so it now
+    -- cascades away with the membership if the player later leaves —
+    -- same as top-up requests already do.
+    update payment_requests
+    set status = 'approved', decided_at = now(), member_id = new_member_id
+    where id = request_id;
+  end if;
+end;
+$$;
+
+-- One-time cleanup: remove orphaned join-payment records left over
+-- from BEFORE this fix — approved joins for people who left and are
+-- no longer actually members of that event.
+delete from payment_requests
+where status = 'approved'
+  and member_id is null
+  and not exists (
+    select 1 from event_members m
+    where m.event_id = payment_requests.event_id
+      and m.user_id = payment_requests.user_id
+  );
