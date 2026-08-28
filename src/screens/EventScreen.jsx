@@ -42,6 +42,7 @@ export default function EventScreen({ session }) {
   const [editingLocation, setEditingLocation] = useState(false);
   const [locationDraft, setLocationDraft] = useState("");
   const [copied, setCopied] = useState(false);
+  const [paymentHistory, setPaymentHistory] = useState([]);
 
   const isHost = event?.host_id === session.user.id;
   const isMember = members.some((m) => m.user_id === session.user.id);
@@ -82,6 +83,25 @@ export default function EventScreen({ session }) {
       .in("status", ["pending_approval", "awaiting_payment"])
       .order("created_at", { ascending: true });
     setRequests(requestData || []);
+
+    // Actual paid transactions — the source of truth for "who paid how much,"
+    // independent of the current roster (which can drift if guests are
+    // later edited or removed). This is what refunds should be based on.
+    const { data: paidData } = await supabase
+      .from("payment_requests")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("status", "approved")
+      .order("decided_at", { ascending: true });
+
+    const paidRows = paidData || [];
+    const paidUserIds = [...new Set(paidRows.map((r) => r.user_id))];
+    let paidAvatarMap = {};
+    if (paidUserIds.length > 0) {
+      const { data: paidProfiles } = await supabase.from("profiles").select("id, avatar_url").in("id", paidUserIds);
+      paidAvatarMap = Object.fromEntries((paidProfiles || []).map((p) => [p.id, p.avatar_url]));
+    }
+    setPaymentHistory(paidRows.map((r) => ({ ...r, avatar_url: paidAvatarMap[r.user_id] || null })));
 
     setLoading(false);
   }, [eventId]);
@@ -293,6 +313,11 @@ export default function EventScreen({ session }) {
           <button className={`event-tab ${tab === "participants" ? "selected" : ""}`} onClick={() => setTab("participants")}>
             Participants &middot; {totalPlayers}
           </button>
+          {isHost && (
+            <button className={`event-tab ${tab === "payments" ? "selected" : ""}`} onClick={() => setTab("payments")}>
+              Payments
+            </button>
+          )}
         </div>
 
         {atCapacity && (
@@ -504,7 +529,7 @@ export default function EventScreen({ session }) {
               </div>
             )}
           </div>
-        ) : (
+        ) : tab === "participants" ? (
           <div className="body-scroll">
             <div className="section-title"><Users size={15} /> CONFIRMED &middot; {totalPlayers}</div>
 
@@ -663,7 +688,86 @@ export default function EventScreen({ session }) {
               </>
             )}
           </div>
-        )}
+        ) : tab === "payments" && isHost ? (
+          <div className="body-scroll">
+            <div className="section-title">PAYMENT REPORT</div>
+            <div style={{ fontSize: 11.5, color: "var(--fade)", padding: "0 20px 14px", marginTop: -8 }}>
+              Actual approved payments — use this for refunds. This can differ from the current roster if guests were added or removed after payment.
+            </div>
+
+            {paymentHistory.length === 0 ? (
+              <div className="empty-state">
+                <div className="title">No payments recorded yet.</div>
+              </div>
+            ) : (
+              Object.values(
+                paymentHistory.reduce((acc, r) => {
+                  if (!acc[r.user_id]) {
+                    acc[r.user_id] = { userId: r.user_id, name: r.name, avatar_url: r.avatar_url, total: 0, transactions: [] };
+                  }
+                  acc[r.user_id].total += Number(r.amount);
+                  acc[r.user_id].transactions.push(r);
+                  return acc;
+                }, {})
+              ).map((p) => (
+                <div key={p.userId} className="card">
+                  <div className="member-row" style={{ justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div className="avatar member" style={{ overflow: "hidden" }}>
+                        {p.avatar_url ? (
+                          <img src={p.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ) : (
+                          initials(p.name)
+                        )}
+                      </div>
+                      <div>
+                        <div className="member-name">{p.name}</div>
+                        <div className="member-sub">
+                          {p.transactions.length} payment{p.transactions.length !== 1 ? "s" : ""}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>
+                      ₱{p.total.toLocaleString()}
+                    </div>
+                  </div>
+
+                  <div className="guest-list">
+                    {p.transactions.map((t) => {
+                      const isTopUp = !!t.member_id;
+                      const guestCount = t.guest_names?.length || 0;
+                      const label = isTopUp
+                        ? `Added ${guestCount} guest${guestCount !== 1 ? "s" : ""}`
+                        : `Joined \u00B7 ${1 + guestCount} player${guestCount !== 1 ? "s" : ""}`;
+                      return (
+                        <div key={t.id} className="guest-row">
+                          <div className="left">
+                            <span className="name">{label}</span>
+                            <span className="tag">
+                              {t.decided_at ? new Date(t.decided_at).toLocaleDateString() : ""}
+                            </span>
+                          </div>
+                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>
+                            ₱{Number(t.amount).toLocaleString()}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
+
+            <div className="card" style={{ background: "var(--ink)", border: "none" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ color: "#fff", fontFamily: "var(--font-display)", fontSize: 13 }}>TOTAL PAID</div>
+                <div style={{ color: "var(--citrus)", fontFamily: "var(--font-display)", fontSize: 20 }}>
+                  ₱{paymentHistory.reduce((sum, r) => sum + Number(r.amount), 0).toLocaleString()}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {isHost ? (
           <div className="total-bar">
