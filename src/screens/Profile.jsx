@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Settings as SettingsIcon, ThumbsUp, ChevronRight, Camera } from "lucide-react";
+import { ArrowLeft, Settings as SettingsIcon, ThumbsUp, ChevronRight, Camera, Eye, EyeOff } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { SPORTS, initials } from "../lib/constants";
 
@@ -16,6 +16,12 @@ export default function Profile({ session }) {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarError, setAvatarError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -76,6 +82,30 @@ export default function Profile({ session }) {
     setPreferredSport(sport);
     setPickingSport(false);
     await supabase.from("profiles").upsert({ id: session.user.id, preferred_sport: sport });
+  }
+
+  async function changePassword() {
+    setPasswordError("");
+    setPasswordSuccess(false);
+    if (newPassword.length < 6) {
+      setPasswordError("Password must be at least 6 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Passwords don't match.");
+      return;
+    }
+    setChangingPassword(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setChangingPassword(false);
+    if (error) {
+      setPasswordError(error.message);
+      return;
+    }
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordSuccess(true);
+    setTimeout(() => setPasswordSuccess(false), 2500);
   }
 
   const shownName = displayName || session.user.email?.split("@")[0] || "Player";
@@ -160,7 +190,52 @@ export default function Profile({ session }) {
           )}
           <div style={{ fontSize: 12, color: "var(--fade)", marginTop: 4 }}>{session.user.email}</div>
 
-          <div className="qr-upload-card" style={{ width: "100%", marginTop: 22 }}>
+          <div className="qr-upload-card" style={{ width: "100%", marginTop: 18 }}>
+            <div className="field-label" style={{ marginBottom: 10 }}>Change password</div>
+            <div style={{ position: "relative" }}>
+              <input
+                className="solid-input"
+                type={showPassword ? "text" : "password"}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="New password"
+                minLength={6}
+                style={{ paddingRight: 40 }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                style={{
+                  position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                  background: "none", border: "none", color: "var(--fade)", cursor: "pointer", display: "flex", padding: 4,
+                }}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+            <input
+              className="solid-input"
+              type={showPassword ? "text" : "password"}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Confirm new password"
+              minLength={6}
+              style={{ marginTop: 10 }}
+            />
+            <button
+              className="btn btn-primary btn-block"
+              style={{ marginTop: 10, padding: "10px 0" }}
+              onClick={changePassword}
+              disabled={changingPassword || !newPassword}
+            >
+              {changingPassword ? "Updating..." : "Update password"}
+            </button>
+            {passwordError && <div className="error-text">{passwordError}</div>}
+            {passwordSuccess && <div className="helper-text" style={{ color: "var(--green)" }}>Password updated</div>}
+          </div>
+
+          <div className="qr-upload-card" style={{ width: "100%", marginTop: 14 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <ThumbsUp size={16} color="var(--fade)" />
               <div style={{ fontSize: 12.5, color: "var(--fade)" }}>Endorsements and reviews are coming soon.</div>
