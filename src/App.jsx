@@ -14,7 +14,7 @@ import Profile from "./screens/Profile";
 
 const REDIRECT_KEY = "eventsquad_redirect_after_login";
 const AUTO_LOGOUT_FLAG = "eventsquad_auto_logout";
-const INACTIVITY_LIMIT_MS = 30 * 60 * 1000; // 30 minutes
+const INACTIVITY_LIMIT_MS = 1 * 60 * 1000; // 30 minutes
 
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = still checking
