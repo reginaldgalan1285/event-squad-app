@@ -13,6 +13,8 @@ import Settings from "./screens/Settings";
 import Profile from "./screens/Profile";
 
 const REDIRECT_KEY = "eventsquad_redirect_after_login";
+const AUTO_LOGOUT_FLAG = "eventsquad_auto_logout";
+const INACTIVITY_LIMIT_MS = 30 * 60 * 1000; // 30 minutes
 
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = still checking
@@ -26,6 +28,30 @@ export default function App() {
     });
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  // Sign out automatically after 30 minutes with no mouse/keyboard/touch
+  // activity, so an unattended device doesn't stay logged in indefinitely.
+  useEffect(() => {
+    if (!session) return;
+
+    let timeoutId;
+    function resetTimer() {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        sessionStorage.setItem(AUTO_LOGOUT_FLAG, "1");
+        supabase.auth.signOut();
+      }, INACTIVITY_LIMIT_MS);
+    }
+
+    const activityEvents = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"];
+    activityEvents.forEach((evt) => window.addEventListener(evt, resetTimer));
+    resetTimer();
+
+    return () => {
+      clearTimeout(timeoutId);
+      activityEvents.forEach((evt) => window.removeEventListener(evt, resetTimer));
+    };
+  }, [session]);
 
   // While signed out, remember the exact URL being visited (e.g. a
   // forwarded event link) so it can be restored right after sign-in.

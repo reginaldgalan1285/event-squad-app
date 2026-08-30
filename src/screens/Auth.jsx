@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { supabase } from "../supabaseClient";
+
+const AUTO_LOGOUT_FLAG = "eventsquad_auto_logout";
 
 export default function Auth() {
   const [mode, setMode] = useState("signin"); // 'signin' | 'signup'
@@ -11,6 +13,14 @@ export default function Auth() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [autoLoggedOut, setAutoLoggedOut] = useState(false);
+
+  useEffect(() => {
+    if (sessionStorage.getItem(AUTO_LOGOUT_FLAG)) {
+      sessionStorage.removeItem(AUTO_LOGOUT_FLAG);
+      setAutoLoggedOut(true);
+    }
+  }, []);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -63,6 +73,11 @@ export default function Auth() {
         <div className="auth-sub">
           {mode === "signup" ? "Create an account to host or join an open play." : "Sign in to host or join an open play."}
         </div>
+        {autoLoggedOut && (
+          <div style={{ fontSize: 12, color: "var(--fade)", marginTop: -6, marginBottom: 14, background: "var(--chalk)", padding: "8px 10px", borderRadius: 8 }}>
+            You were signed out after 30 minutes of inactivity.
+          </div>
+        )}
 
         {message ? (
           <div style={{ fontSize: 13.5 }}>{message}</div>
