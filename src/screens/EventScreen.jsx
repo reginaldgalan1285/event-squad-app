@@ -44,9 +44,9 @@ export default function EventScreen({ session }) {
   const [copied, setCopied] = useState(false);
   const [paymentHistory, setPaymentHistory] = useState([]);
 
-  const isHost = event?.host_id === session.user.id;
-  const isMember = members.some((m) => m.user_id === session.user.id);
-  const hasPendingRequest = requests.some((r) => r.user_id === session.user.id);
+  const isHost = !!session && event?.host_id === session.user.id;
+  const isMember = !!session && members.some((m) => m.user_id === session.user.id);
+  const hasPendingRequest = !!session && requests.some((r) => r.user_id === session.user.id);
 
   const loadAll = useCallback(async () => {
     const { data: eventData } = await supabase.from("events").select("*").eq("id", eventId).single();
@@ -282,7 +282,16 @@ export default function EventScreen({ session }) {
             </div>
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
               <button className="icon-btn" onClick={shareEvent} title="Share event"><Share2 size={16} /></button>
-              <button className="icon-btn" onClick={handleSignOut} title="Sign out"><LogOut size={16} /></button>
+              {session ? (
+                <button className="icon-btn" onClick={handleSignOut} title="Sign out"><LogOut size={16} /></button>
+              ) : (
+                <button
+                  onClick={() => navigate("/login")}
+                  style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", fontSize: 11, fontWeight: 700, padding: "5px 10px", borderRadius: 999, cursor: "pointer" }}
+                >
+                  Sign in
+                </button>
+              )}
             </div>
           </div>
           {copied && <div style={{ textAlign: "center", fontSize: 10.5, color: "var(--citrus)", marginTop: 4 }}>Link copied</div>}
@@ -535,7 +544,7 @@ export default function EventScreen({ session }) {
 
             {members.map((member) => {
               const memberIsHost = member.is_host;
-              const memberIsMe = member.user_id === session.user.id;
+              const memberIsMe = !!session && member.user_id === session.user.id;
               return (
                 <div key={member.id} className="card">
                   <div className="member-row">
@@ -673,7 +682,7 @@ export default function EventScreen({ session }) {
                           <button className="btn btn-outline-coral btn-small" onClick={() => declineRequest(r.id)}>Decline</button>
                         </div>
                       )}
-                      {r.user_id === session.user.id && (
+                      {session && r.user_id === session.user.id && (
                         <button
                           className="btn btn-outline-coral btn-small"
                           style={{ width: "100%", marginTop: 10 }}

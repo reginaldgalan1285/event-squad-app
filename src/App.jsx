@@ -16,6 +16,19 @@ const REDIRECT_KEY = "eventsquad_redirect_after_login";
 const AUTO_LOGOUT_FLAG = "eventsquad_auto_logout";
 const INACTIVITY_LIMIT_MS = 30 * 60 * 1000; // 30 minutes
 
+// Wraps any screen that requires an account. An anonymous visitor gets
+// bounced to /login, with the URL they wanted remembered so they land
+// right back here after signing in — same mechanism as a forwarded
+// event link for a logged-out visitor.
+function RequireAuth({ session, children }) {
+  const location = useLocation();
+  if (!session) {
+    sessionStorage.setItem(REDIRECT_KEY, location.pathname + location.search);
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+}
+
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = still checking
   const location = useLocation();
@@ -53,42 +66,38 @@ export default function App() {
     };
   }, [session]);
 
-  // While signed out, remember the exact URL being visited (e.g. a
-  // forwarded event link) so it can be restored right after sign-in.
-  useEffect(() => {
-    if (session === null) {
-      sessionStorage.setItem(REDIRECT_KEY, location.pathname + location.search);
-    }
-  }, [session, location]);
-
   // Once a session appears, send the person back to whatever URL they
-  // originally landed on instead of always dropping them on the dashboard.
+  // originally landed on (a forwarded event link, or wherever
+  // RequireAuth bounced them from) instead of always the dashboard.
   useEffect(() => {
     if (session) {
       const redirect = sessionStorage.getItem(REDIRECT_KEY);
-      if (redirect && redirect !== "/") {
+      if (redirect && redirect !== "/" && redirect !== "/login") {
         sessionStorage.removeItem(REDIRECT_KEY);
         navigate(redirect, { replace: true });
       }
     }
   }, [session]);
 
-  if (session === undefined) return null; // brief initial check, avoids an Auth flash
-
-  if (!session) return <Auth />;
+  if (session === undefined) return null; // brief initial check, avoids a flash
 
   return (
     <Routes>
-      <Route path="/" element={<Dashboard session={session} />} />
+      {/* Public — no account needed to browse */}
+      <Route path="/login" element={session ? <Navigate to="/" replace /> : <Auth />} />
       <Route path="/discover" element={<Discover session={session} />} />
-      <Route path="/create" element={<CreateEvent session={session} />} />
-      <Route path="/settings" element={<Settings session={session} />} />
-      <Route path="/profile" element={<Profile session={session} />} />
       <Route path="/event/:eventId" element={<EventScreen session={session} />} />
-      <Route path="/event/:eventId/join" element={<JoinScreen session={session} />} />
-      <Route path="/event/:eventId/topup/:memberId" element={<TopUpScreen session={session} />} />
-      <Route path="/event/:eventId/pay/:requestId" element={<PaymentScreen />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
+
+      {/* Everything else needs an account */}
+      <Route path="/" element={<RequireAuth session={session}><Dashboard session={session} /></RequireAuth>} />
+      <Route path="/create" element={<RequireAuth session={session}><CreateEvent session={session} /></RequireAuth>} />
+      <Route path="/settings" element={<RequireAuth session={session}><Settings session={session} /></RequireAuth>} />
+      <Route path="/profile" element={<RequireAuth session={session}><Profile session={session} /></RequireAuth>} />
+      <Route path="/event/:eventId/join" element={<RequireAuth session={session}><JoinScreen session={session} /></RequireAuth>} />
+      <Route path="/event/:eventId/topup/:memberId" element={<RequireAuth session={session}><TopUpScreen session={session} /></RequireAuth>} />
+      <Route path="/event/:eventId/pay/:requestId" element={<RequireAuth session={session}><PaymentScreen /></RequireAuth>} />
+
+      <Route path="*" element={<Navigate to={session ? "/" : "/discover"} replace />} />
     </Routes>
   );
 }
