@@ -18,15 +18,20 @@ export default function Dashboard({ session }) {
   const [profileName, setProfileName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState(null);
 
-  const displayName = profileName || session.user.email?.split("@")[0] || "there";
+  const displayName = profileName || session?.user?.email?.split("@")[0] || "there";
 
   useEffect(() => {
+    if (!session) {
+      setLoading(false);
+      loadUpcomingEvents([]);
+      return;
+    }
     (async () => {
       const myIds = await loadMyEvents();
       await loadUpcomingEvents(myIds);
     })();
     loadProfile();
-  }, []);
+  }, [session]);
 
   async function loadProfile() {
     const { data } = await supabase.from("profiles").select("display_name, avatar_url").eq("id", session.user.id).maybeSingle();
@@ -85,19 +90,33 @@ export default function Dashboard({ session }) {
       <img src="/event-squad-wordmark.svg" alt="Event Squad" className="brand-strip" />
       <div className="phone">
         <div className="dash-topbar">
-          <div className="dash-greeting" style={{ cursor: "pointer" }} onClick={() => navigate("/profile")}>
-            <div className="dash-avatar" style={{ overflow: "hidden" }}>
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : (
-                initials(displayName)
-              )}
-            </div>
-            <div className="dash-name">Hi, {displayName}</div>
-          </div>
-          <button className="icon-btn" onClick={handleSignOut} title="Sign out">
-            <LogOut size={18} />
-          </button>
+          {session ? (
+            <>
+              <div className="dash-greeting" style={{ cursor: "pointer" }} onClick={() => navigate("/profile")}>
+                <div className="dash-avatar" style={{ overflow: "hidden" }}>
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    initials(displayName)
+                  )}
+                </div>
+                <div className="dash-name">Hi, {displayName}</div>
+              </div>
+              <button className="icon-btn" onClick={handleSignOut} title="Sign out">
+                <LogOut size={18} />
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="dash-name">Event Squad</div>
+              <button
+                onClick={() => navigate("/login")}
+                style={{ background: "var(--green)", color: "#fff", border: "none", borderRadius: 999, padding: "7px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}
+              >
+                Sign in
+              </button>
+            </>
+          )}
         </div>
 
         <div className="tile-grid">
@@ -119,30 +138,34 @@ export default function Dashboard({ session }) {
           </div>
         )}
 
-        <div className="section-title" style={{ padding: "18px 20px 0" }}>YOUR EVENTS</div>
+        {session && (
+          <>
+            <div className="section-title" style={{ padding: "18px 20px 0" }}>YOUR EVENTS</div>
 
-        <div className="mine-section">
-          {loading ? (
-            <div style={{ fontSize: 12.5, color: "var(--fade)" }}>Loading...</div>
-          ) : myEvents.length === 0 ? (
-            <div className="empty-state">
-              <div className="title">You haven't joined or hosted an event yet.</div>
-              <button className="btn btn-primary" style={{ padding: "10px 22px", borderRadius: 12 }} onClick={() => navigate("/discover")}>
-                Discover
-              </button>
-            </div>
-          ) : (
-            myEvents.map((row) => (
-              <div key={row.events.id} className="mine-card" onClick={() => navigate(`/event/${row.events.id}`)}>
-                <div>
-                  <div className="name">{row.events.title}</div>
-                  <div className="sub">{row.events.sport} &middot; {formatEventDate(row.events.event_date)}</div>
+            <div className="mine-section">
+              {loading ? (
+                <div style={{ fontSize: 12.5, color: "var(--fade)" }}>Loading...</div>
+              ) : myEvents.length === 0 ? (
+                <div className="empty-state">
+                  <div className="title">You haven't joined or hosted an event yet.</div>
+                  <button className="btn btn-primary" style={{ padding: "10px 22px", borderRadius: 12 }} onClick={() => navigate("/discover")}>
+                    Discover
+                  </button>
                 </div>
-                <div className="role">{row.is_host ? "Host" : "Player"}</div>
-              </div>
-            ))
-          )}
-        </div>
+              ) : (
+                myEvents.map((row) => (
+                  <div key={row.events.id} className="mine-card" onClick={() => navigate(`/event/${row.events.id}`)}>
+                    <div>
+                      <div className="name">{row.events.title}</div>
+                      <div className="sub">{row.events.sport} &middot; {formatEventDate(row.events.event_date)}</div>
+                    </div>
+                    <div className="role">{row.is_host ? "Host" : "Player"}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
 
         <div className="section-title" style={{ padding: "6px 20px 0" }}>UPCOMING EVENTS</div>
 

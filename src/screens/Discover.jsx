@@ -19,7 +19,7 @@ function sameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-export default function Discover() {
+export default function Discover({ session }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const days = useMemo(() => buildNextDays(7), []);
@@ -35,8 +35,8 @@ export default function Discover() {
   }, []);
 
   useEffect(() => {
-    if (tab === "people" && people === null) loadPeople();
-  }, [tab]);
+    if (tab === "people" && people === null && session) loadPeople();
+  }, [tab, session]);
 
   async function loadPeople() {
     const { data } = await supabase
@@ -141,7 +141,14 @@ export default function Discover() {
           </div>
         ) : (
           <div className="body-scroll" style={{ padding: "14px 0 10px" }}>
-            {people === null ? (
+            {!session ? (
+              <div className="empty-state">
+                <div className="title">Sign in to see who's signed up.</div>
+                <button className="btn btn-primary" style={{ padding: "10px 22px", borderRadius: 12 }} onClick={() => navigate("/login")}>
+                  Sign in
+                </button>
+              </div>
+            ) : people === null ? (
               <div style={{ fontSize: 12.5, color: "var(--fade)", padding: "0 20px" }}>Loading...</div>
             ) : people.length === 0 ? (
               <div className="empty-state">

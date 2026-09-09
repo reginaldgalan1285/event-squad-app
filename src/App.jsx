@@ -85,11 +85,11 @@ export default function App() {
     <Routes>
       {/* Public — no account needed to browse */}
       <Route path="/login" element={session ? <Navigate to="/" replace /> : <Auth />} />
+      <Route path="/" element={<Dashboard session={session} />} />
       <Route path="/discover" element={<Discover session={session} />} />
       <Route path="/event/:eventId" element={<EventScreen session={session} />} />
 
       {/* Everything else needs an account */}
-      <Route path="/" element={<RequireAuth session={session}><Dashboard session={session} /></RequireAuth>} />
       <Route path="/create" element={<RequireAuth session={session}><CreateEvent session={session} /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth session={session}><Settings session={session} /></RequireAuth>} />
       <Route path="/profile" element={<RequireAuth session={session}><Profile session={session} /></RequireAuth>} />
@@ -97,7 +97,7 @@ export default function App() {
       <Route path="/event/:eventId/topup/:memberId" element={<RequireAuth session={session}><TopUpScreen session={session} /></RequireAuth>} />
       <Route path="/event/:eventId/pay/:requestId" element={<RequireAuth session={session}><PaymentScreen /></RequireAuth>} />
 
-      <Route path="*" element={<Navigate to={session ? "/" : "/discover"} replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
