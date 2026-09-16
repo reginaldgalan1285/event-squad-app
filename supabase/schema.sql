@@ -527,3 +527,165 @@ where status = 'approved'
     where m.event_id = payment_requests.event_id
       and m.user_id = payment_requests.user_id
   );
+
+-- ============================================================
+-- Corrected cleanup — the earlier delete only checked whether the
+-- user was a member of the event AT ALL, which doesn't distinguish
+-- which specific past join created their CURRENT membership. Since
+-- event_members has a unique (event_id, user_id) constraint, only
+-- one join can ever be "current" per user per event — any other
+-- approved join-type payment for that same user+event is provably
+-- stale (it could only exist if they'd left in between). This keeps
+-- just the most recent one and removes the rest.
+-- ============================================================
+delete from payment_requests pr
+where pr.status = 'approved'
+  and pr.member_id is null
+  and exists (
+    select 1 from payment_requests pr2
+    where pr2.event_id = pr.event_id
+      and pr2.user_id = pr.user_id
+      and pr2.member_id is null
+      and pr2.status = 'approved'
+      and pr2.decided_at > pr.decided_at
+  );
+
+-- ============================================================
+-- Corrected cleanup: the previous delete only caught players who
+-- left and never rejoined. It missed the leave-then-rejoin case
+-- (like Jomer's) because they DO have a current membership — just
+-- not the one their oldest orphaned join payment was for. This
+-- version instead keeps only the most recent join-type payment per
+-- person per event, and also still removes anyone with zero current
+-- membership at all.
+-- ============================================================
+delete from payment_requests pr
+where pr.status = 'approved'
+  and pr.member_id is null
+  and (
+    exists (
+      select 1 from payment_requests pr2
+      where pr2.event_id = pr.event_id
+        and pr2.user_id = pr.user_id
+        and pr2.status = 'approved'
+        and pr2.member_id is null
+        and pr2.decided_at > pr.decided_at
+    )
+    or not exists (
+      select 1 from event_members m
+      where m.event_id = pr.event_id
+        and m.user_id = pr.user_id
+    )
+  );
+
+-- ============================================================
+-- Allow anonymous (not signed in) visitors to VIEW events, the
+-- roster, and guest lists — browsing no longer requires an account.
+-- Every insert/update/delete policy is untouched: joining, paying,
+-- hosting, and editing anything still requires being signed in,
+-- exactly as before. Only read access is being widened here.
+-- ============================================================
+drop policy if exists "events_select_authenticated" on events;
+create policy "events_select_public" on events
+  for select using (true);
+
+drop policy if exists "members_select_authenticated" on event_members;
+create policy "members_select_public" on event_members
+  for select using (true);
+
+drop policy if exists "guests_select_authenticated" on guests;
+create policy "guests_select_public" on guests
+  for select using (true);
+
+-- ============================================================
+-- TOURNAMENT MODE — round robin and single-elimination bracket
+-- play, scoped to one event. Deliberately its own lightweight
+-- roster (tournament_teams) rather than reusing event_members —
+-- a tournament often includes people who never went through the
+-- paid-join flow (e.g. walk-ins added just for bracket play), and
+-- coupling it to the payment system would make it far more rigid.
+-- Read is public (same as events); only the event's host can
+-- create/edit anything here.
+-- ============================================================
+create table tournaments (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null references events(id) on delete cascade,
+  name text not null default 'Tournament',
+  format text not null check (format in ('round_robin', 'single_elim')),
+  match_type text not null default 'doubles' check (match_type in ('singles', 'doubles')),
+  scoring_mode text not null default 'score' check (scoring_mode in ('score', 'winloss')),
+  default_match_minutes int not null default 15,
+  status text not null default 'setup' check (status in ('setup', 'in_progress', 'completed')),
+  created_at timestamptz not null default now()
+);
+
+create table tournament_courts (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  label text not null,
+  gender_restriction text not null default 'any' check (gender_restriction in ('any', 'men', 'women', 'mixed')),
+  level_restriction text,
+  match_type text not null default 'any' check (match_type in ('any', 'singles', 'doubles')),
+  created_at timestamptz not null default now()
+);
+
+create table tournament_teams (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  name text not null,
+  player1_name text not null,
+  player2_name text,
+  gender text check (gender in ('men', 'women', 'mixed')),
+  level text,
+  created_at timestamptz not null default now()
+);
+
+create table tournament_matches (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  round_number int not null,
+  match_index int not null default 0,
+  court_id uuid references tournament_courts(id) on delete set null,
+  team1_id uuid references tournament_teams(id) on delete cascade,
+  team2_id uuid references tournament_teams(id) on delete cascade,
+  team1_score int,
+  team2_score int,
+  winner_team_id uuid references tournament_teams(id),
+  is_tie boolean not null default false,
+  status text not null default 'scheduled' check (status in ('scheduled', 'in_progress', 'completed', 'bye')),
+  match_minutes int,
+  started_at timestamptz,
+  next_match_id uuid references tournament_matches(id) on delete set null,
+  next_match_slot int,
+  created_at timestamptz not null default now()
+);
+
+alter table tournaments enable row level security;
+alter table tournament_courts enable row level security;
+alter table tournament_teams enable row level security;
+alter table tournament_matches enable row level security;
+
+create policy "tournaments_select_public" on tournaments for select using (true);
+create policy "tcourts_select_public" on tournament_courts for select using (true);
+create policy "tteams_select_public" on tournament_teams for select using (true);
+create policy "tmatches_select_public" on tournament_matches for select using (true);
+
+create policy "tournaments_write_host" on tournaments for all
+  using (exists (select 1 from events e where e.id = event_id and e.host_id = auth.uid()))
+  with check (exists (select 1 from events e where e.id = event_id and e.host_id = auth.uid()));
+
+create policy "tcourts_write_host" on tournament_courts for all
+  using (exists (select 1 from tournaments t join events e on e.id = t.event_id where t.id = tournament_id and e.host_id = auth.uid()))
+  with check (exists (select 1 from tournaments t join events e on e.id = t.event_id where t.id = tournament_id and e.host_id = auth.uid()));
+
+create policy "tteams_write_host" on tournament_teams for all
+  using (exists (select 1 from tournaments t join events e on e.id = t.event_id where t.id = tournament_id and e.host_id = auth.uid()))
+  with check (exists (select 1 from tournaments t join events e on e.id = t.event_id where t.id = tournament_id and e.host_id = auth.uid()));
+
+create policy "tmatches_write_host" on tournament_matches for all
+  using (exists (select 1 from tournaments t join events e on e.id = t.event_id where t.id = tournament_id and e.host_id = auth.uid()))
+  with check (exists (select 1 from tournaments t join events e on e.id = t.event_id where t.id = tournament_id and e.host_id = auth.uid()));
+
+create index idx_tmatches_tournament on tournament_matches(tournament_id);
+create index idx_tteams_tournament on tournament_teams(tournament_id);
+create index idx_tcourts_tournament on tournament_courts(tournament_id);

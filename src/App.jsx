@@ -11,6 +11,7 @@ import TopUpScreen from "./screens/TopUpScreen";
 import PaymentScreen from "./screens/PaymentScreen";
 import Settings from "./screens/Settings";
 import Profile from "./screens/Profile";
+import Tournament from "./screens/Tournament";
 
 const REDIRECT_KEY = "eventsquad_redirect_after_login";
 const AUTO_LOGOUT_FLAG = "eventsquad_auto_logout";
@@ -88,6 +89,7 @@ export default function App() {
       <Route path="/" element={<Dashboard session={session} />} />
       <Route path="/discover" element={<Discover session={session} />} />
       <Route path="/event/:eventId" element={<EventScreen session={session} />} />
+      <Route path="/event/:eventId/tournament" element={<Tournament session={session} />} />
 
       {/* Everything else needs an account */}
       <Route path="/create" element={<RequireAuth session={session}><CreateEvent session={session} /></RequireAuth>} />

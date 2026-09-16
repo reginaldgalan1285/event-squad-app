@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   X, Plus, Users, MapPin, Calendar, UserPlus, ChevronDown, Check, Clock,
-  LogOut, ArrowLeft, Pencil, Share2, Tag, DollarSign,
+  LogOut, ArrowLeft, Pencil, Share2, Tag, DollarSign, Trophy,
 } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import {
@@ -537,6 +537,19 @@ export default function EventScreen({ session }) {
                 </div>
               </div>
             )}
+
+            <div className="detail-row" style={{ borderBottom: "none" }}>
+              <div className="icon-col"><Trophy size={18} /></div>
+              <div className="content">
+                <button
+                  onClick={() => navigate(`/event/${eventId}/tournament`)}
+                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                >
+                  <div className="headline" style={{ color: "var(--green)" }}>Tournament bracket &rarr;</div>
+                </button>
+                <div className="subline">Round robin or single-elimination bracket for this event</div>
+              </div>
+            </div>
           </div>
         ) : tab === "participants" ? (
           <div className="body-scroll">
