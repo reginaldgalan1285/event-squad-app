@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Trophy, Play, X } from "lucide-react";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { ArrowLeft, Plus, Trophy, Play, X, Pencil } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { generateRoundRobin, buildBracketSkeleton, computeStandings } from "../lib/tournament";
 
@@ -32,8 +32,11 @@ function MatchTimer({ match }) {
 export default function Tournament({ session }) {
   const { eventId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTournamentId = searchParams.get("t");
 
   const [event, setEvent] = useState(null);
+  const [tournamentsList, setTournamentsList] = useState([]);
   const [tournament, setTournament] = useState(null);
   const [teams, setTeams] = useState([]);
   const [courts, setCourts] = useState([]);
@@ -41,6 +44,8 @@ export default function Tournament({ session }) {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("teams");
   const [generating, setGenerating] = useState(false);
+  const [showNewForm, setShowNewForm] = useState(false);
+  const [editingSettings, setEditingSettings] = useState(false);
 
   const [name, setName] = useState("Tournament");
   const [format, setFormat] = useState("round_robin");
@@ -70,8 +75,15 @@ export default function Tournament({ session }) {
     const { data: eventData } = await supabase.from("events").select("*").eq("id", eventId).single();
     setEvent(eventData);
 
-    const { data: tData } = await supabase.from("tournaments").select("*").eq("event_id", eventId).maybeSingle();
-    setTournament(tData);
+    const { data: listData } = await supabase
+      .from("tournaments")
+      .select("*")
+      .eq("event_id", eventId)
+      .order("created_at", { ascending: true });
+    setTournamentsList(listData || []);
+
+    const tData = activeTournamentId ? (listData || []).find((t) => t.id === activeTournamentId) : null;
+    setTournament(tData || null);
 
     if (tData) {
       const [{ data: teamData }, { data: courtData }, { data: matchData }] = await Promise.all([
@@ -83,13 +95,27 @@ export default function Tournament({ session }) {
       setCourts(courtData || []);
       setMatches(matchData || []);
       if (matchData && matchData.length > 0) setTab((t) => (t === "teams" || t === "courts" ? "matches" : t));
+    } else {
+      setTeams([]);
+      setCourts([]);
+      setMatches([]);
+      setTab("teams");
     }
     setLoading(false);
-  }, [eventId]);
+  }, [eventId, activeTournamentId]);
 
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  function openTournament(id) {
+    setSearchParams({ t: id });
+  }
+
+  function backToList() {
+    setSearchParams({});
+    setEditingSettings(false);
+  }
 
   async function createTournament(e) {
     e.preventDefault();
@@ -107,7 +133,42 @@ export default function Tournament({ session }) {
       })
       .select()
       .single();
-    if (!error) setTournament(data);
+    if (!error && data) {
+      setShowNewForm(false);
+      setName("Tournament"); setFormat("round_robin"); setMatchType("doubles");
+      setScoringMode("score"); setDefaultMinutes(15); setNumPools(1); setTimerEnabled(true);
+      await loadAll();
+      openTournament(data.id);
+    }
+  }
+
+  async function saveTournamentSettings(e) {
+    e.preventDefault();
+    const updates = {
+      name: name.trim() || "Tournament",
+      default_match_minutes: Number(defaultMinutes) || 15,
+      timer_enabled: timerEnabled,
+    };
+    if (tournament.status === "setup") {
+      updates.format = format;
+      updates.match_type = matchType;
+      updates.scoring_mode = scoringMode;
+      updates.num_pools = format === "round_robin" ? Math.max(1, Number(numPools) || 1) : 1;
+    }
+    await supabase.from("tournaments").update(updates).eq("id", tournament.id);
+    setEditingSettings(false);
+    await loadAll();
+  }
+
+  function openEditSettings() {
+    setName(tournament.name);
+    setFormat(tournament.format);
+    setMatchType(tournament.match_type);
+    setScoringMode(tournament.scoring_mode);
+    setDefaultMinutes(tournament.default_match_minutes);
+    setNumPools(tournament.num_pools);
+    setTimerEnabled(tournament.timer_enabled);
+    setEditingSettings(true);
   }
 
   async function addTeam(e) {
@@ -329,24 +390,54 @@ export default function Tournament({ session }) {
       <img src="/event-squad-wordmark.svg" alt="Event Squad" className="brand-strip" />
       <div className="phone">
         <div className="header">
-          <div className="header-row">
-            <button className="icon-btn" onClick={() => navigate(`/event/${eventId}`)}><ArrowLeft size={18} /></button>
-            <div className="title-display" style={{ fontSize: 17 }}>
-              <Trophy size={16} style={{ marginRight: 6, verticalAlign: -2 }} />
-              {tournament?.name || "Tournament"}
+          <div className="header-row" style={{ justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button className="icon-btn" onClick={() => (tournament ? backToList() : navigate(`/event/${eventId}`))}><ArrowLeft size={18} /></button>
+              <div className="title-display" style={{ fontSize: 17 }}>
+                <Trophy size={16} style={{ marginRight: 6, verticalAlign: -2 }} />
+                {tournament?.name || "Tournaments"}
+              </div>
             </div>
+            {isHost && tournament && !editingSettings && (
+              <button className="icon-btn" onClick={openEditSettings} title="Edit tournament"><Pencil size={16} /></button>
+            )}
           </div>
           {event && <div style={{ fontSize: 11.5, opacity: 0.85, marginTop: 6 }}>{event.title}</div>}
         </div>
 
         {!tournament ? (
           <div className="body-scroll">
-            {!isHost ? (
+            {tournamentsList.length > 0 && (
+              <div style={{ padding: "16px 20px 0" }}>
+                {tournamentsList.map((t) => (
+                  <div key={t.id} className="mine-card" onClick={() => openTournament(t.id)}>
+                    <div>
+                      <div className="name">{t.name}</div>
+                      <div className="sub">
+                        {t.format === "round_robin" ? "Round robin" : "Bracket"} &middot; {t.match_type} &middot; {t.status.replace("_", " ")}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!isHost && tournamentsList.length === 0 && (
               <div className="empty-state">
                 <div className="title">No tournament has been set up for this event yet.</div>
               </div>
-            ) : (
-              <form onSubmit={createTournament}>
+            )}
+
+            {isHost && !showNewForm && (
+              <div style={{ padding: "16px 20px" }}>
+                <button className="dashed-join-btn" onClick={() => setShowNewForm(true)}>
+                  <Plus size={14} /> New tournament
+                </button>
+              </div>
+            )}
+
+            {isHost && showNewForm && (
+              <form onSubmit={createTournament} style={{ padding: "0 20px 20px" }}>
                 <div className="field-label">Tournament name</div>
                 <input className="solid-input" value={name} onChange={(e) => setName(e.target.value)} />
 
@@ -393,11 +484,70 @@ export default function Tournament({ session }) {
                   </>
                 )}
 
-                <button className="btn btn-primary btn-block" style={{ marginTop: 20 }} type="submit">
-                  Create tournament
-                </button>
+                <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+                  <button className="btn btn-outline-coral btn-small" type="button" onClick={() => setShowNewForm(false)}>Cancel</button>
+                  <button className="btn btn-primary" style={{ flex: 2, borderRadius: 14 }} type="submit">Create tournament</button>
+                </div>
               </form>
             )}
+          </div>
+        ) : editingSettings ? (
+          <div className="body-scroll">
+            <form onSubmit={saveTournamentSettings} style={{ padding: "16px 20px" }}>
+              <div className="field-label">Tournament name</div>
+              <input className="solid-input" value={name} onChange={(e) => setName(e.target.value)} />
+
+              {tournament.status !== "setup" && (
+                <div className="helper-text" style={{ marginTop: 10 }}>
+                  Format, match type, scoring, and pools are locked once matches have been generated.
+                </div>
+              )}
+
+              <div className="field-label" style={{ marginTop: 14 }}>Format</div>
+              <select className="solid-input" value={format} onChange={(e) => setFormat(e.target.value)} disabled={tournament.status !== "setup"}>
+                <option value="round_robin">Round robin</option>
+                <option value="single_elim">Single-elimination bracket</option>
+              </select>
+
+              {format === "round_robin" && (
+                <>
+                  <div className="field-label" style={{ marginTop: 14 }}>Pools</div>
+                  <input
+                    className="solid-input" type="number" min="1" value={numPools} disabled={tournament.status !== "setup"}
+                    onChange={(e) => setNumPools(e.target.value)}
+                  />
+                </>
+              )}
+
+              <div className="field-label" style={{ marginTop: 14 }}>Match type</div>
+              <select className="solid-input" value={matchType} onChange={(e) => setMatchType(e.target.value)} disabled={tournament.status !== "setup"}>
+                <option value="doubles">Doubles</option>
+                <option value="singles">Singles</option>
+              </select>
+
+              <div className="field-label" style={{ marginTop: 14 }}>Scoring</div>
+              <select className="solid-input" value={scoringMode} onChange={(e) => setScoringMode(e.target.value)} disabled={tournament.status !== "setup"}>
+                <option value="score">Track scores</option>
+                <option value="winloss">Winner only (no scores)</option>
+              </select>
+
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                <input type="checkbox" checked={timerEnabled} onChange={(e) => setTimerEnabled(e.target.checked)} />
+                Enable match countdown timer
+              </label>
+
+              {timerEnabled && (
+                <>
+                  <div className="field-label" style={{ marginTop: 14 }}>Default match length (minutes)</div>
+                  <input className="solid-input" type="number" min="1" value={defaultMinutes} onChange={(e) => setDefaultMinutes(e.target.value)} />
+                </>
+              )}
+
+              <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+                <button className="btn btn-outline-coral btn-small" type="button" onClick={() => setEditingSettings(false)}>Cancel</button>
+                <button className="btn btn-primary" style={{ flex: 2, borderRadius: 14 }} type="submit">Save changes</button>
+              </div>
+            </form>
           </div>
         ) : (
           <>
