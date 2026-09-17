@@ -88,6 +88,18 @@ export function buildBracketSkeleton(teamIds) {
   return matches;
 }
 
+// Names a bracket round based on how many rounds remain until the final —
+// e.g. with 3 total rounds: round 1 = Quarterfinals, round 2 = Semifinals,
+// round 3 = Final. Falls back to "Round of N" for anything bigger.
+export function roundLabel(roundNumber, totalRounds) {
+  const fromEnd = totalRounds - roundNumber;
+  if (fromEnd === 0) return "FINAL";
+  if (fromEnd === 1) return "SEMIFINALS";
+  if (fromEnd === 2) return "QUARTERFINALS";
+  const teamsInRound = Math.pow(2, fromEnd + 1);
+  return `ROUND OF ${teamsInRound}`;
+}
+
 // Standings for round robin: wins/losses/ties, win %, and point
 // differential. Ties on wins are broken properly, not by overall
 // point differential alone:
