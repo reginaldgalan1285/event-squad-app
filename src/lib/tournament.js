@@ -89,15 +89,22 @@ export function buildBracketSkeleton(teamIds) {
 }
 
 // Standings for round robin: wins/losses/ties, win %, and point
-// differential — with tied win totals broken by point differential,
-// exactly the tiebreak the standings table needs.
+// differential. Ties on wins are broken properly, not by overall
+// point differential alone:
+//  - exactly 2 teams tied -> head-to-head result between just those two
+//  - 3+ teams tied -> a "mini-league" using only the matches those tied
+//    teams played against EACH OTHER (wins, then point differential
+//    scoped to that subgroup) — a team's results against everyone
+//    else in the tournament never factor into this tiebreak.
+// Each row's `tiebreakNote` explains what broke the tie, for display.
 export function computeStandings(teams, matches) {
   const stats = Object.fromEntries(
     teams.map((t) => [t.id, { team: t, played: 0, wins: 0, losses: 0, ties: 0, pointsFor: 0, pointsAgainst: 0 }])
   );
 
-  for (const m of matches) {
-    if (m.status !== "completed" || !m.team1_id || !m.team2_id) continue;
+  const completed = matches.filter((m) => m.status === "completed" && m.team1_id && m.team2_id);
+
+  for (const m of completed) {
     const s1 = stats[m.team1_id];
     const s2 = stats[m.team2_id];
     if (!s1 || !s2) continue;
@@ -128,8 +135,71 @@ export function computeStandings(teams, matches) {
     ...s,
     winPct: s.played > 0 ? (s.wins + 0.5 * s.ties) / s.played : 0,
     pointDiff: s.pointsFor - s.pointsAgainst,
+    tiebreakNote: "",
   }));
 
-  rows.sort((a, b) => b.wins - a.wins || b.pointDiff - a.pointDiff || b.winPct - a.winPct);
-  return rows;
+  function matchBetween(idA, idB) {
+    return completed.find(
+      (m) => (m.team1_id === idA && m.team2_id === idB) || (m.team1_id === idB && m.team2_id === idA)
+    );
+  }
+
+  const byWins = {};
+  for (const r of rows) {
+    (byWins[r.wins] ||= []).push(r);
+  }
+
+  const orderedGroups = [];
+  for (const winsKey of Object.keys(byWins).map(Number).sort((a, b) => b - a)) {
+    const group = byWins[winsKey];
+
+    if (group.length === 1) {
+      orderedGroups.push(group);
+      continue;
+    }
+
+    if (group.length === 2) {
+      const [a, b] = group;
+      const h2h = matchBetween(a.team.id, b.team.id);
+      if (h2h && !h2h.is_tie && h2h.winner_team_id) {
+        const winner = h2h.winner_team_id === a.team.id ? a : b;
+        const loser = winner === a ? b : a;
+        winner.tiebreakNote = `Beat ${loser.team.name}`;
+        loser.tiebreakNote = `Lost to ${winner.team.name}`;
+        orderedGroups.push([winner, loser]);
+      } else {
+        if (h2h && h2h.is_tie) {
+          a.tiebreakNote = "Tied H2H";
+          b.tiebreakNote = "Tied H2H";
+        }
+        orderedGroups.push([...group].sort((x, y) => y.pointDiff - x.pointDiff));
+      }
+      continue;
+    }
+
+    // 3+ tied on wins: mini-league using only matches among this group.
+    const groupIds = new Set(group.map((g) => g.team.id));
+    const mini = Object.fromEntries(group.map((g) => [g.team.id, { wins: 0, pointDiff: 0 }]));
+    for (const m of completed) {
+      if (!groupIds.has(m.team1_id) || !groupIds.has(m.team2_id)) continue;
+      if (m.winner_team_id && mini[m.winner_team_id]) mini[m.winner_team_id].wins += 1;
+      if (m.team1_score != null && m.team2_score != null) {
+        mini[m.team1_id].pointDiff += m.team1_score - m.team2_score;
+        mini[m.team2_id].pointDiff += m.team2_score - m.team1_score;
+      }
+    }
+    for (const g of group) {
+      const d = mini[g.team.id].pointDiff;
+      g.tiebreakNote = `Group ${d > 0 ? "+" : ""}${d}`;
+    }
+    orderedGroups.push(
+      [...group].sort((x, y) => {
+        const mx = mini[x.team.id];
+        const my = mini[y.team.id];
+        return my.wins - mx.wins || my.pointDiff - mx.pointDiff || y.pointDiff - x.pointDiff;
+      })
+    );
+  }
+
+  return orderedGroups.flat();
 }
