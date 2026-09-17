@@ -70,6 +70,7 @@ export default function Tournament({ session }) {
   const [courtMatchType, setCourtMatchType] = useState("any");
 
   const [scoreDrafts, setScoreDrafts] = useState({});
+  const [editingMatchId, setEditingMatchId] = useState(null);
 
   const isHost = !!session && event?.host_id === session.user.id;
 
@@ -429,12 +430,21 @@ export default function Tournament({ session }) {
       await supabase.from("tournament_matches").update({ [field]: winner_team_id }).eq("id", match.next_match_id);
     }
 
+    setEditingMatchId(null);
+
     await loadAll();
   }
 
   async function assignCourtManually(matchId, courtId) {
     await supabase.from("tournament_matches").update({ court_id: courtId || null }).eq("id", matchId);
     await loadAll();
+  }
+
+  function beginEditMatch(m) {
+    if (tournament.scoring_mode === "score") {
+      setScoreDrafts((d) => ({ ...d, [m.id]: { s1: m.team1_score ?? "", s2: m.team2_score ?? "" } }));
+    }
+    setEditingMatchId(m.id);
   }
 
   function renderMatchCard(m) {
@@ -466,38 +476,54 @@ export default function Tournament({ session }) {
         {m.status === "completed" && (
           <div style={{ textAlign: "center", fontSize: 12, color: "var(--fade)", marginTop: 6 }}>
             {m.is_tie ? "Tied" : tournament.scoring_mode === "score" ? `${m.team1_score} \u2013 ${m.team2_score}` : "Final"}
+            {isHost && editingMatchId !== m.id && (
+              <button
+                onClick={() => beginEditMatch(m)}
+                style={{ background: "none", border: "none", color: "var(--green)", fontSize: 10.5, fontWeight: 700, marginLeft: 8, cursor: "pointer", padding: 0 }}
+              >
+                Edit
+              </button>
+            )}
           </div>
         )}
 
-        {isHost && t1 && t2 && m.status !== "completed" && (
+        {isHost && t1 && t2 && (m.status !== "completed" || editingMatchId === m.id) && (
           <div style={{ marginTop: 10 }}>
             {m.status === "scheduled" && (
               <button className="btn btn-primary btn-small" style={{ width: "100%" }} onClick={() => startMatch(m)}>
                 <Play size={12} style={{ verticalAlign: -2 }} /> Start match
               </button>
             )}
-            {m.status === "in_progress" && tournament.scoring_mode === "score" && (
+            {(m.status === "in_progress" || editingMatchId === m.id) && tournament.scoring_mode === "score" && (
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <input
                   className="dashed-input" type="number" placeholder="0"
+                  style={{ flex: "0 0 44px", width: 44, minWidth: 0, textAlign: "center" }}
                   value={draft.s1 ?? ""}
                   onChange={(e) => setScoreDrafts((d) => ({ ...d, [m.id]: { ...d[m.id], s1: e.target.value } }))}
                 />
-                <span style={{ fontSize: 11, color: "var(--fade)" }}>vs</span>
+                <span style={{ fontSize: 11, color: "var(--fade)", flexShrink: 0 }}>vs</span>
                 <input
                   className="dashed-input" type="number" placeholder="0"
+                  style={{ flex: "0 0 44px", width: 44, minWidth: 0, textAlign: "center" }}
                   value={draft.s2 ?? ""}
                   onChange={(e) => setScoreDrafts((d) => ({ ...d, [m.id]: { ...d[m.id], s2: e.target.value } }))}
                 />
-                <button className="btn btn-primary btn-icon-square" onClick={() => submitResult(m)}>&#10003;</button>
+                <button className="btn btn-primary btn-icon-square" style={{ flexShrink: 0, marginLeft: "auto" }} onClick={() => submitResult(m)}>&#10003;</button>
+                {editingMatchId === m.id && (
+                  <button className="icon-btn" style={{ flexShrink: 0, color: "var(--fade)" }} onClick={() => setEditingMatchId(null)}><X size={14} /></button>
+                )}
               </div>
             )}
-            {m.status === "in_progress" && tournament.scoring_mode === "winloss" && (
-              <div style={{ display: "flex", gap: 6 }}>
+            {(m.status === "in_progress" || editingMatchId === m.id) && tournament.scoring_mode === "winloss" && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <button className="btn btn-primary btn-small" onClick={() => submitResult(m, "team1")}>{t1.name} won</button>
                 <button className="btn btn-primary btn-small" onClick={() => submitResult(m, "team2")}>{t2.name} won</button>
                 {allowTie && (
                   <button className="btn btn-outline-coral btn-small" onClick={() => submitResult(m, "tie")}>Tie</button>
+                )}
+                {editingMatchId === m.id && (
+                  <button className="icon-btn" style={{ color: "var(--fade)" }} onClick={() => setEditingMatchId(null)}><X size={14} /></button>
                 )}
               </div>
             )}
@@ -936,6 +962,56 @@ export default function Tournament({ session }) {
                     </div>
                   </div>
                 )}
+
+                {(() => {
+                  const bracketMatches = tournament.format === "single_elim" ? groupStageMatches : playoffStageMatches;
+                  if (bracketMatches.length === 0) return null;
+                  const bracketRounds = [...new Set(bracketMatches.map((m) => m.round_number))].sort((a, b) => a - b);
+                  const totalBracketRounds = Math.max(...bracketRounds);
+                  return (
+                    <div style={{ marginBottom: 18 }}>
+                      <div className="round-header" style={{ fontSize: 14, color: "var(--ink)", paddingTop: 0 }}>
+                        {tournament.format === "single_elim" ? "BRACKET RESULTS" : "PLAYOFF RESULTS"}
+                      </div>
+                      {bracketRounds.map((r) => (
+                        <div key={r} style={{ padding: "0 20px", marginBottom: 10 }}>
+                          <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--fade)", textTransform: "uppercase", marginBottom: 6 }}>
+                            {roundLabel(r, totalBracketRounds)}
+                          </div>
+                          {bracketMatches.filter((m) => m.round_number === r).map((m) => {
+                            const t1 = m.team1_id ? teamsById[m.team1_id] : null;
+                            const t2 = m.team2_id ? teamsById[m.team2_id] : null;
+                            if (m.status === "bye") {
+                              return (
+                                <div key={m.id} style={{ fontSize: 12.5, padding: "5px 0", color: "var(--ink)" }}>
+                                  <strong>{t1?.name || "TBD"}</strong> — bye
+                                </div>
+                              );
+                            }
+                            return (
+                              <div key={m.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "5px 0", borderBottom: "1px solid var(--line)" }}>
+                                <div>
+                                  <span style={{ fontWeight: m.winner_team_id === m.team1_id ? 700 : 400, color: m.winner_team_id === m.team1_id ? "var(--green)" : "var(--ink)" }}>
+                                    {t1?.name || "TBD"}
+                                  </span>
+                                  {" vs "}
+                                  <span style={{ fontWeight: m.winner_team_id === m.team2_id ? 700 : 400, color: m.winner_team_id === m.team2_id ? "var(--green)" : "var(--ink)" }}>
+                                    {t2?.name || "TBD"}
+                                  </span>
+                                </div>
+                                <div style={{ color: "var(--fade)", flexShrink: 0, marginLeft: 8 }}>
+                                  {m.status === "completed"
+                                    ? tournament.scoring_mode === "score" ? `${m.team1_score}\u2013${m.team2_score}` : "Final"
+                                    : "Pending"}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
                 {(tournament.num_pools > 1
                   ? [...new Set(teams.map((t) => t.pool_number))].sort((a, b) => a - b)
                   : [null]
