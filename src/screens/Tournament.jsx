@@ -497,15 +497,15 @@ export default function Tournament({ session }) {
             {(m.status === "in_progress" || editingMatchId === m.id) && tournament.scoring_mode === "score" && (
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <input
-                  className="dashed-input" type="number" placeholder="0"
-                  style={{ flex: "0 0 44px", width: 44, minWidth: 0, textAlign: "center" }}
+                  className="dashed-input score-input" type="number" placeholder="0"
+                  style={{ flex: "0 0 40px", width: 40, minWidth: 0, textAlign: "center" }}
                   value={draft.s1 ?? ""}
                   onChange={(e) => setScoreDrafts((d) => ({ ...d, [m.id]: { ...d[m.id], s1: e.target.value } }))}
                 />
                 <span style={{ fontSize: 11, color: "var(--fade)", flexShrink: 0 }}>vs</span>
                 <input
-                  className="dashed-input" type="number" placeholder="0"
-                  style={{ flex: "0 0 44px", width: 44, minWidth: 0, textAlign: "center" }}
+                  className="dashed-input score-input" type="number" placeholder="0"
+                  style={{ flex: "0 0 40px", width: 40, minWidth: 0, textAlign: "center" }}
                   value={draft.s2 ?? ""}
                   onChange={(e) => setScoreDrafts((d) => ({ ...d, [m.id]: { ...d[m.id], s2: e.target.value } }))}
                 />

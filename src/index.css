@@ -318,6 +318,16 @@ body {
   margin: 0 auto 10px;
 }
 
+.score-input::-webkit-inner-spin-button,
+.score-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.score-input {
+  -moz-appearance: textfield;
+  padding: 7px 2px !important;
+}
+
 /* ---------- Dashboard ---------- */
 .dash-topbar {
   display: flex;
