@@ -1271,6 +1271,7 @@ export default function Tournament({ session }) {
                         <th>T</th>
                         <th>Win%</th>
                         <th>+/-</th>
+                        <th>Tiebreak</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1283,6 +1284,7 @@ export default function Tournament({ session }) {
                           <td>{s.ties}</td>
                           <td>{(s.winPct * 100).toFixed(0)}%</td>
                           <td>{s.pointDiff > 0 ? `+${s.pointDiff}` : s.pointDiff}</td>
+                          <td style={{ fontSize: 10, color: "var(--fade)" }}>{s.tiebreakNote || "\u2014"}</td>
                         </tr>
                       ))}
                     </tbody>

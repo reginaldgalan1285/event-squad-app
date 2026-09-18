@@ -206,8 +206,27 @@ export function buildOpenPlayHistory(matches, teamsById) {
 // Aggregates match results by individual PLAYER rather than by team —
 // needed for open-play mode, where the same person gets a brand new
 // "team" row every round (paired with someone different each time).
+// Standings for open-play mode, aggregated by individual player rather
+// than by team (since the same person gets a new team every round).
+// Ties on wins are broken the same way as the team-based standings:
+//  - exactly 2 players tied -> head-to-head using only the matches
+//    where they happened to be on OPPOSING teams (matches where they
+//    were partners together produce no result between them, so those
+//    don't count)
+//  - 3+ players tied -> point differential scoped to matches where at
+//    least one other tied player was on the opposing side
+// Each row's `tiebreakNote` explains what broke the tie, for display.
 export function computePlayerStandings(players, teams, matches) {
   const teamsById = Object.fromEntries(teams.map((t) => [t.id, t]));
+
+  function resolvePlayers(teamId) {
+    const t = teamsById[teamId];
+    if (!t) return [];
+    return [t.player1_id, t.player2_id].filter(Boolean);
+  }
+
+  const completed = matches.filter((m) => m.status === "completed" && m.team1_id && m.team2_id);
+
   const stats = Object.fromEntries(
     players.map((p) => [p.id, { player: p, played: 0, wins: 0, losses: 0, ties: 0, pointsFor: 0, pointsAgainst: 0 }])
   );
@@ -226,21 +245,91 @@ export function computePlayerStandings(players, teams, matches) {
     }
   }
 
-  for (const m of matches) {
-    if (m.status !== "completed" || !m.team1_id || !m.team2_id) continue;
+  for (const m of completed) {
     const t1Won = m.winner_team_id === m.team1_id;
     const t2Won = m.winner_team_id === m.team2_id;
     creditTeam(m.team1_id, t1Won, t2Won, m.is_tie, m.team1_score, m.team2_score);
     creditTeam(m.team2_id, t2Won, t1Won, m.is_tie, m.team2_score, m.team1_score);
   }
 
-  return Object.values(stats)
-    .map((s) => ({
-      ...s,
-      winPct: s.played > 0 ? (s.wins + 0.5 * s.ties) / s.played : 0,
-      pointDiff: s.pointsFor - s.pointsAgainst,
-    }))
-    .sort((a, b) => b.wins - a.wins || b.pointDiff - a.pointDiff);
+  const rows = Object.values(stats).map((s) => ({
+    ...s,
+    winPct: s.played > 0 ? (s.wins + 0.5 * s.ties) / s.played : 0,
+    pointDiff: s.pointsFor - s.pointsAgainst,
+    tiebreakNote: "",
+  }));
+
+  function opposingMatches(idA, idB) {
+    return completed.filter((m) => {
+      const p1s = resolvePlayers(m.team1_id);
+      const p2s = resolvePlayers(m.team2_id);
+      return (p1s.includes(idA) && p2s.includes(idB)) || (p1s.includes(idB) && p2s.includes(idA));
+    });
+  }
+
+  const byWins = {};
+  for (const r of rows) (byWins[r.wins] ||= []).push(r);
+
+  const orderedGroups = [];
+  for (const winsKey of Object.keys(byWins).map(Number).sort((a, b) => b - a)) {
+    const group = byWins[winsKey];
+
+    if (group.length === 1) {
+      orderedGroups.push(group);
+      continue;
+    }
+
+    if (group.length === 2) {
+      const [a, b] = group;
+      const opp = opposingMatches(a.player.id, b.player.id);
+      let aWins = 0, bWins = 0;
+      for (const m of opp) {
+        if (m.is_tie) continue;
+        const p1s = resolvePlayers(m.team1_id);
+        const aOnTeam1 = p1s.includes(a.player.id);
+        const team1Won = m.winner_team_id === m.team1_id;
+        if (aOnTeam1 === team1Won) aWins += 1;
+        else bWins += 1;
+      }
+      if (aWins !== bWins) {
+        const winner = aWins > bWins ? a : b;
+        const loser = winner === a ? b : a;
+        const winCount = Math.max(aWins, bWins);
+        const loseCount = Math.min(aWins, bWins);
+        winner.tiebreakNote = `${winCount}-${loseCount} vs ${loser.player.name}`;
+        loser.tiebreakNote = `${loseCount}-${winCount} vs ${winner.player.name}`;
+        orderedGroups.push([winner, loser]);
+      } else {
+        if (opp.length > 0) {
+          a.tiebreakNote = "Tied H2H";
+          b.tiebreakNote = "Tied H2H";
+        }
+        orderedGroups.push([...group].sort((x, y) => y.pointDiff - x.pointDiff));
+      }
+      continue;
+    }
+
+    // 3+ tied: point differential scoped to matches against another tied player.
+    const groupIds = new Set(group.map((g) => g.player.id));
+    const miniDiff = Object.fromEntries(group.map((g) => [g.player.id, 0]));
+    for (const m of completed) {
+      if (m.team1_score == null || m.team2_score == null) continue;
+      const p1s = resolvePlayers(m.team1_id);
+      const p2s = resolvePlayers(m.team2_id);
+      const diff = m.team1_score - m.team2_score;
+      const p1HasTiedOpponent = p2s.some((pid) => groupIds.has(pid));
+      const p2HasTiedOpponent = p1s.some((pid) => groupIds.has(pid));
+      if (p1HasTiedOpponent) p1s.forEach((pid) => { if (groupIds.has(pid)) miniDiff[pid] += diff; });
+      if (p2HasTiedOpponent) p2s.forEach((pid) => { if (groupIds.has(pid)) miniDiff[pid] -= diff; });
+    }
+    for (const g of group) {
+      const d = miniDiff[g.player.id];
+      g.tiebreakNote = `Group ${d > 0 ? "+" : ""}${d}`;
+    }
+    orderedGroups.push([...group].sort((x, y) => miniDiff[y.player.id] - miniDiff[x.player.id]));
+  }
+
+  return orderedGroups.flat();
 }
 
 // Standings for round robin: wins/losses/ties, win %, and point
