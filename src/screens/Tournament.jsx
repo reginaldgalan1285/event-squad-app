@@ -77,6 +77,7 @@ export default function Tournament({ session }) {
 
   const [scoreDrafts, setScoreDrafts] = useState({});
   const [editingMatchId, setEditingMatchId] = useState(null);
+  const [createError, setCreateError] = useState("");
 
   const isHost = !!session && event?.host_id === session.user.id;
 
@@ -131,6 +132,7 @@ export default function Tournament({ session }) {
 
   async function createTournament(e) {
     e.preventDefault();
+    setCreateError("");
     const { data, error } = await supabase
       .from("tournaments")
       .insert({
@@ -147,7 +149,11 @@ export default function Tournament({ session }) {
       })
       .select()
       .single();
-    if (!error && data) {
+    if (error) {
+      setCreateError(error.message);
+      return;
+    }
+    if (data) {
       setShowNewForm(false);
       setName("Tournament"); setFormat("round_robin"); setMatchType("doubles");
       setScoringMode("score"); setDefaultMinutes(15); setNumPools(1); setTimerEnabled(true); setAdvanceCount(0);
@@ -825,6 +831,7 @@ export default function Tournament({ session }) {
                   <button className="btn btn-outline-coral btn-small" type="button" onClick={() => setShowNewForm(false)}>Cancel</button>
                   <button className="btn btn-primary" style={{ flex: 2, borderRadius: 14 }} type="submit">Create tournament</button>
                 </div>
+                {createError && <div className="error-text">{createError}</div>}
               </form>
             )}
           </div>
