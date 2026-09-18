@@ -185,6 +185,14 @@ export default function Tournament({ session }) {
     await loadAll();
   }
 
+  async function deleteTournament() {
+    if (!window.confirm(`Delete "${tournament.name}"? This permanently removes all its teams/players, courts, and match history — this can't be undone.`)) return;
+    await supabase.from("tournaments").delete().eq("id", tournament.id);
+    setEditingSettings(false);
+    backToList();
+    await loadAll();
+  }
+
   function openEditSettings() {
     setName(tournament.name);
     setFormat(tournament.format);
@@ -931,6 +939,14 @@ export default function Tournament({ session }) {
                 <button className="btn btn-outline-coral btn-small" type="button" onClick={() => setEditingSettings(false)}>Cancel</button>
                 <button className="btn btn-primary" style={{ flex: 2, borderRadius: 14 }} type="submit">Save changes</button>
               </div>
+
+              <button
+                type="button"
+                onClick={deleteTournament}
+                style={{ width: "100%", marginTop: 14, background: "none", border: "none", color: "var(--coral)", fontSize: 12.5, fontWeight: 700, padding: 8, cursor: "pointer" }}
+              >
+                Delete this tournament
+              </button>
             </form>
           </div>
         ) : (
