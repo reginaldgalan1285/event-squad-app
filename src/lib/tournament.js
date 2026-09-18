@@ -100,6 +100,149 @@ export function roundLabel(roundNumber, totalRounds) {
   return `ROUND OF ${teamsInRound}`;
 }
 
+function pairKey(a, b) {
+  return [a, b].sort().join("|");
+}
+function teamPairKey(teamA, teamB) {
+  return [[...teamA].sort().join(","), [...teamB].sort().join(",")].sort().join("|");
+}
+
+// Generates ONE open-play round: dynamically pairs players (doubles) or
+// matches them directly (singles). Players with fewer games played so
+// far are prioritized for inclusion — this is what lets a latecomer
+// catch up to everyone else's total over subsequent rounds. Repeat
+// partners/opponents are avoided where possible, but with small groups
+// or many rounds a repeat is sometimes unavoidable — this is a fairness
+// heuristic, not a mathematically perfect covering design.
+export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPartners, pastOpponents }) {
+  const sorted = [...players].sort((a, b) => (gamesPlayed[a] || 0) - (gamesPlayed[b] || 0));
+
+  if (matchType === "singles") {
+    const used = new Set();
+    const matches = [];
+    for (const p of sorted) {
+      if (used.has(p)) continue;
+      let opp = sorted.find((o) => o !== p && !used.has(o) && !pastOpponents.has(pairKey(p, o)));
+      if (!opp) opp = sorted.find((o) => o !== p && !used.has(o));
+      if (opp) {
+        used.add(p); used.add(opp);
+        matches.push({ team1: [p], team2: [opp] });
+      }
+    }
+    return { matches, sitOut: sorted.filter((p) => !used.has(p)) };
+  }
+
+  // Doubles: form partnerships first, then match partnerships against each other.
+  const usedForPartner = new Set();
+  const partnerships = [];
+  for (const p of sorted) {
+    if (usedForPartner.has(p)) continue;
+    let partner = sorted.find((o) => o !== p && !usedForPartner.has(o) && !pastPartners.has(pairKey(p, o)));
+    if (!partner) partner = sorted.find((o) => o !== p && !usedForPartner.has(o));
+    if (partner) {
+      usedForPartner.add(p); usedForPartner.add(partner);
+      partnerships.push([p, partner]);
+    }
+  }
+  const sitOutFromPartner = sorted.filter((p) => !usedForPartner.has(p));
+
+  const usedForMatch = new Set();
+  const matches = [];
+  for (let i = 0; i < partnerships.length; i++) {
+    const teamA = partnerships[i];
+    const keyA = teamA.join(",");
+    if (usedForMatch.has(keyA)) continue;
+    let bestJ = -1;
+    for (let j = i + 1; j < partnerships.length; j++) {
+      const teamB = partnerships[j];
+      const keyB = teamB.join(",");
+      if (usedForMatch.has(keyB)) continue;
+      if (bestJ === -1) bestJ = j;
+      if (!pastOpponents.has(teamPairKey(teamA, teamB))) { bestJ = j; break; }
+    }
+    if (bestJ !== -1) {
+      usedForMatch.add(keyA);
+      usedForMatch.add(partnerships[bestJ].join(","));
+      matches.push({ team1: teamA, team2: partnerships[bestJ] });
+    }
+  }
+  const matchedPlayers = new Set(matches.flatMap((m) => [...m.team1, ...m.team2]));
+  const sitOut = [...sitOutFromPartner, ...partnerships.flat().filter((p) => !matchedPlayers.has(p))];
+
+  return { matches, sitOut };
+}
+
+// Rebuilds per-player games-played counts and the sets of past
+// partnerships/opponent-team pairings from every match played so far,
+// in the exact shape generateOpenPlayRound expects. Called fresh every
+// time rounds are generated — the very first generation, after a
+// latecomer joins mid-session, or "generate more rounds" once earlier
+// ones are finished — so rotation always continues fairly from
+// wherever the session actually is, with no separate state to track.
+export function buildOpenPlayHistory(matches, teamsById) {
+  const gamesPlayed = {};
+  const pastPartners = new Set();
+  const pastOpponents = new Set();
+
+  function resolvePlayers(teamId) {
+    const t = teamsById[teamId];
+    if (!t || !t.player1_id) return [];
+    return [t.player1_id, t.player2_id].filter(Boolean);
+  }
+
+  for (const m of matches) {
+    if (!m.team1_id || !m.team2_id) continue;
+    const p1s = resolvePlayers(m.team1_id);
+    const p2s = resolvePlayers(m.team2_id);
+    if (p1s.length === 2) pastPartners.add(pairKey(p1s[0], p1s[1]));
+    if (p2s.length === 2) pastPartners.add(pairKey(p2s[0], p2s[1]));
+    if (p1s.length && p2s.length) pastOpponents.add(teamPairKey(p1s, p2s));
+    [...p1s, ...p2s].forEach((p) => { gamesPlayed[p] = (gamesPlayed[p] || 0) + 1; });
+  }
+
+  return { gamesPlayed, pastPartners, pastOpponents };
+}
+
+// Aggregates match results by individual PLAYER rather than by team —
+// needed for open-play mode, where the same person gets a brand new
+// "team" row every round (paired with someone different each time).
+export function computePlayerStandings(players, teams, matches) {
+  const teamsById = Object.fromEntries(teams.map((t) => [t.id, t]));
+  const stats = Object.fromEntries(
+    players.map((p) => [p.id, { player: p, played: 0, wins: 0, losses: 0, ties: 0, pointsFor: 0, pointsAgainst: 0 }])
+  );
+
+  function creditTeam(teamId, won, lost, tied, pf, pa) {
+    const team = teamsById[teamId];
+    if (!team) return;
+    for (const pid of [team.player1_id, team.player2_id]) {
+      const s = stats[pid];
+      if (!s) continue;
+      s.played += 1;
+      if (won) s.wins += 1;
+      if (lost) s.losses += 1;
+      if (tied) s.ties += 1;
+      if (pf != null && pa != null) { s.pointsFor += pf; s.pointsAgainst += pa; }
+    }
+  }
+
+  for (const m of matches) {
+    if (m.status !== "completed" || !m.team1_id || !m.team2_id) continue;
+    const t1Won = m.winner_team_id === m.team1_id;
+    const t2Won = m.winner_team_id === m.team2_id;
+    creditTeam(m.team1_id, t1Won, t2Won, m.is_tie, m.team1_score, m.team2_score);
+    creditTeam(m.team2_id, t2Won, t1Won, m.is_tie, m.team2_score, m.team1_score);
+  }
+
+  return Object.values(stats)
+    .map((s) => ({
+      ...s,
+      winPct: s.played > 0 ? (s.wins + 0.5 * s.ties) / s.played : 0,
+      pointDiff: s.pointsFor - s.pointsAgainst,
+    }))
+    .sort((a, b) => b.wins - a.wins || b.pointDiff - a.pointDiff);
+}
+
 // Standings for round robin: wins/losses/ties, win %, and point
 // differential. Ties on wins are broken properly, not by overall
 // point differential alone:

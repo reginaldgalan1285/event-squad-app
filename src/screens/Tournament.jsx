@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Plus, Trophy, Play, X, Pencil } from "lucide-react";
 import { supabase } from "../supabaseClient";
-import { generateRoundRobin, buildBracketSkeleton, computeStandings, roundLabel } from "../lib/tournament";
+import { generateRoundRobin, buildBracketSkeleton, computeStandings, roundLabel, generateOpenPlayRound, computePlayerStandings, buildOpenPlayHistory } from "../lib/tournament";
 
 function MatchTimer({ match }) {
   const [, forceTick] = useState(0);
@@ -56,6 +56,12 @@ export default function Tournament({ session }) {
   const [timerEnabled, setTimerEnabled] = useState(true);
   const [advanceCount, setAdvanceCount] = useState(0);
   const [generatingPlayoffs, setGeneratingPlayoffs] = useState(false);
+  const [fixedPartners, setFixedPartners] = useState(true);
+  const [players, setPlayers] = useState([]);
+  const [playerName, setPlayerName] = useState("");
+  const [playerGender, setPlayerGender] = useState("");
+  const [playerLevel, setPlayerLevel] = useState("");
+  const [roundsToGenerate, setRoundsToGenerate] = useState(1);
 
   const [teamName, setTeamName] = useState("");
   const [player1, setPlayer1] = useState("");
@@ -89,19 +95,22 @@ export default function Tournament({ session }) {
     setTournament(tData || null);
 
     if (tData) {
-      const [{ data: teamData }, { data: courtData }, { data: matchData }] = await Promise.all([
+      const [{ data: teamData }, { data: courtData }, { data: matchData }, { data: playerData }] = await Promise.all([
         supabase.from("tournament_teams").select("*").eq("tournament_id", tData.id).order("created_at"),
         supabase.from("tournament_courts").select("*").eq("tournament_id", tData.id).order("created_at"),
         supabase.from("tournament_matches").select("*").eq("tournament_id", tData.id).order("round_number").order("match_index"),
+        supabase.from("tournament_players").select("*").eq("tournament_id", tData.id).order("joined_at"),
       ]);
       setTeams(teamData || []);
       setCourts(courtData || []);
       setMatches(matchData || []);
+      setPlayers(playerData || []);
       if (matchData && matchData.length > 0) setTab((t) => (t === "teams" || t === "courts" ? "matches" : t));
     } else {
       setTeams([]);
       setCourts([]);
       setMatches([]);
+      setPlayers([]);
       setTab("teams");
     }
     setLoading(false);
@@ -131,9 +140,10 @@ export default function Tournament({ session }) {
         match_type: matchType,
         scoring_mode: scoringMode,
         default_match_minutes: Number(defaultMinutes) || 15,
-        num_pools: format === "round_robin" ? Math.max(1, Number(numPools) || 1) : 1,
+        num_pools: format === "round_robin" && fixedPartners ? Math.max(1, Number(numPools) || 1) : 1,
         timer_enabled: timerEnabled,
-        advance_count: format === "round_robin" ? Number(advanceCount) || 0 : 0,
+        advance_count: format === "round_robin" && fixedPartners ? Number(advanceCount) || 0 : 0,
+        fixed_partners: format === "round_robin" ? fixedPartners : true,
       })
       .select()
       .single();
@@ -141,6 +151,7 @@ export default function Tournament({ session }) {
       setShowNewForm(false);
       setName("Tournament"); setFormat("round_robin"); setMatchType("doubles");
       setScoringMode("score"); setDefaultMinutes(15); setNumPools(1); setTimerEnabled(true); setAdvanceCount(0);
+      setFixedPartners(true);
       await loadAll();
       openTournament(data.id);
     }
@@ -157,12 +168,10 @@ export default function Tournament({ session }) {
       updates.format = format;
       updates.match_type = matchType;
       updates.scoring_mode = scoringMode;
-      updates.num_pools = format === "round_robin" ? Math.max(1, Number(numPools) || 1) : 1;
+      updates.num_pools = format === "round_robin" && fixedPartners ? Math.max(1, Number(numPools) || 1) : 1;
+      updates.fixed_partners = format === "round_robin" ? fixedPartners : true;
     }
-    // Playoff advance count stays editable even after group matches exist —
-    // it only takes effect once "Generate playoffs" is actually pressed,
-    // and only round robin tournaments use it at all.
-    if (tournament.format === "round_robin") {
+    if (tournament.format === "round_robin" && (tournament.fixed_partners !== false)) {
       updates.advance_count = Number(advanceCount) || 0;
     }
     await supabase.from("tournaments").update(updates).eq("id", tournament.id);
@@ -179,6 +188,7 @@ export default function Tournament({ session }) {
     setNumPools(tournament.num_pools);
     setTimerEnabled(tournament.timer_enabled);
     setAdvanceCount(tournament.advance_count || 0);
+    setFixedPartners(tournament.fixed_partners !== false);
     setEditingSettings(true);
   }
 
@@ -221,6 +231,30 @@ export default function Tournament({ session }) {
 
   async function removeCourt(id) {
     await supabase.from("tournament_courts").delete().eq("id", id);
+    await loadAll();
+  }
+
+  // Open-play roster management. Unlike fixed teams, this is never
+  // gated to "setup" status — adding a player mid-session (a latecomer)
+  // is exactly the point, and generateOpenPlayRounds below will
+  // automatically prioritize anyone with fewer games played so far.
+  async function addPlayer(e) {
+    e.preventDefault();
+    if (!playerName.trim()) return;
+    await supabase.from("tournament_players").insert({
+      tournament_id: tournament.id,
+      name: playerName.trim(),
+      gender: playerGender || null,
+      level: playerLevel.trim() || null,
+    });
+    setPlayerName(""); setPlayerGender(""); setPlayerLevel("");
+    await loadAll();
+  }
+
+  // Soft-remove only — a hard delete would cascade and destroy the
+  // match history of every round this person already played.
+  async function removePlayer(id) {
+    await supabase.from("tournament_players").update({ active: false }).eq("id", id);
     await loadAll();
   }
 
@@ -328,6 +362,92 @@ export default function Tournament({ session }) {
 
     const { data: freshMatches } = await supabase.from("tournament_matches").select("*").eq("tournament_id", tournament.id);
     await assignCourts(freshMatches || [], courts, teams);
+
+    setGenerating(false);
+    await loadAll();
+  }
+
+  // Handles all three of: the very first round generation, adding a
+  // latecomer mid-session, and "generate more rounds" after earlier
+  // ones finish — all the same operation, since history is rebuilt
+  // fresh from the actual matches every time rather than carried in
+  // any separate state.
+  async function generateOpenPlayRounds(numRounds) {
+    const activePlayers = players.filter((p) => p.active);
+    const minNeeded = tournament.match_type === "doubles" ? 4 : 2;
+    if (activePlayers.length < minNeeded) return;
+
+    setGenerating(true);
+
+    const playersById = Object.fromEntries(players.map((p) => [p.id, p]));
+    let workingMatches = [...matches];
+    let workingTeamsById = { ...Object.fromEntries(teams.map((t) => [t.id, t])) };
+    const maxExistingRound = workingMatches.length > 0 ? Math.max(...workingMatches.map((m) => m.round_number)) : 0;
+
+    for (let i = 0; i < numRounds; i++) {
+      const history = buildOpenPlayHistory(workingMatches, workingTeamsById);
+      const { matches: roundMatches } = generateOpenPlayRound({
+        players: activePlayers.map((p) => p.id),
+        matchType: tournament.match_type,
+        gamesPlayed: history.gamesPlayed,
+        pastPartners: history.pastPartners,
+        pastOpponents: history.pastOpponents,
+      });
+      if (roundMatches.length === 0) break; // not enough players to form even one match
+
+      const roundNumber = maxExistingRound + i + 1;
+      const teamRows = [];
+      roundMatches.forEach((rm) => {
+        for (const side of [rm.team1, rm.team2]) {
+          const p1 = playersById[side[0]];
+          const p2 = side[1] ? playersById[side[1]] : null;
+          const derivedGender = !p2
+            ? p1?.gender || null
+            : p1?.gender && p2?.gender
+            ? (p1.gender === p2.gender ? p1.gender : "mixed")
+            : null;
+          const derivedLevel = !p2 ? p1?.level || null : p1?.level && p1.level === p2?.level ? p1.level : null;
+          teamRows.push({
+            tournament_id: tournament.id,
+            name: side.map((pid) => playersById[pid]?.name || "?").join(" / "),
+            player1_name: p1?.name || "?",
+            player2_name: p2 ? p2.name : null,
+            player1_id: side[0],
+            player2_id: side[1] || null,
+            gender: derivedGender,
+            level: derivedLevel,
+          });
+        }
+      });
+
+      const { data: insertedTeams } = await supabase.from("tournament_teams").insert(teamRows).select();
+      if (!insertedTeams) break;
+
+      const matchRows = roundMatches.map((rm, idx) => ({
+        tournament_id: tournament.id,
+        round_number: roundNumber,
+        match_index: idx,
+        pool_number: 1,
+        stage: "group",
+        team1_id: insertedTeams[idx * 2].id,
+        team2_id: insertedTeams[idx * 2 + 1].id,
+        status: "scheduled",
+        match_minutes: tournament.default_match_minutes,
+      }));
+      const { data: insertedMatches } = await supabase.from("tournament_matches").insert(matchRows).select();
+
+      // Fold this round into the working copies so the NEXT round in
+      // this same batch keeps rotating fairly instead of repeating it.
+      insertedTeams.forEach((t) => { workingTeamsById[t.id] = t; });
+      workingMatches = [...workingMatches, ...(insertedMatches || [])];
+    }
+
+    if (tournament.status === "setup") {
+      await supabase.from("tournaments").update({ status: "in_progress" }).eq("id", tournament.id);
+    }
+
+    const { data: freshMatches } = await supabase.from("tournament_matches").select("*").eq("tournament_id", tournament.id);
+    await assignCourts((freshMatches || []).filter((m) => m.round_number > maxExistingRound), courts, Object.values(workingTeamsById));
 
     setGenerating(false);
     await loadAll();
@@ -641,27 +761,39 @@ export default function Tournament({ session }) {
 
                 {format === "round_robin" && (
                   <>
-                    <div className="field-label" style={{ marginTop: 14 }}>Pools</div>
-                    <input
-                      className="solid-input" type="number" min="1" value={numPools}
-                      onChange={(e) => setNumPools(e.target.value)}
-                    />
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                      <input type="checkbox" checked={!fixedPartners} onChange={(e) => setFixedPartners(!e.target.checked)} />
+                      Open play — rotate partners/opponents each round
+                    </label>
                     <div className="helper-text">
-                      Split teams into separate groups, each running their own round robin. Leave at 1 for a single group.
+                      No fixed teams. Add individual players; every round pairs people up fresh so everyone gets a chance to partner with — and play against — everyone else.
                     </div>
 
-                    <div className="field-label" style={{ marginTop: 14 }}>Playoffs</div>
-                    <select className="solid-input" value={advanceCount} onChange={(e) => setAdvanceCount(e.target.value)}>
-                      <option value={0}>No knockout stage — pool play only</option>
-                      <option value={1}>Top 1 per pool advances</option>
-                      <option value={2}>Top 2 per pool advance</option>
-                      <option value={3}>Top 3 per pool advance</option>
-                      <option value={4}>Top 4 per pool advance</option>
-                      <option value={5}>Top 5 per pool advance</option>
-                    </select>
-                    <div className="helper-text">
-                      After pool play finishes, the top finisher(s) from each pool play a single-elimination bracket for the title.
-                    </div>
+                    {fixedPartners && (
+                      <>
+                        <div className="field-label" style={{ marginTop: 14 }}>Pools</div>
+                        <input
+                          className="solid-input" type="number" min="1" value={numPools}
+                          onChange={(e) => setNumPools(e.target.value)}
+                        />
+                        <div className="helper-text">
+                          Split teams into separate groups, each running their own round robin. Leave at 1 for a single group.
+                        </div>
+
+                        <div className="field-label" style={{ marginTop: 14 }}>Playoffs</div>
+                        <select className="solid-input" value={advanceCount} onChange={(e) => setAdvanceCount(e.target.value)}>
+                          <option value={0}>No knockout stage — pool play only</option>
+                          <option value={1}>Top 1 per pool advances</option>
+                          <option value={2}>Top 2 per pool advance</option>
+                          <option value={3}>Top 3 per pool advance</option>
+                          <option value={4}>Top 4 per pool advance</option>
+                          <option value={5}>Top 5 per pool advance</option>
+                        </select>
+                        <div className="helper-text">
+                          After pool play finishes, the top finisher(s) from each pool play a single-elimination bracket for the title.
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
 
@@ -716,21 +848,33 @@ export default function Tournament({ session }) {
 
               {format === "round_robin" && (
                 <>
-                  <div className="field-label" style={{ marginTop: 14 }}>Pools</div>
-                  <input
-                    className="solid-input" type="number" min="1" value={numPools} disabled={tournament.status !== "setup"}
-                    onChange={(e) => setNumPools(e.target.value)}
-                  />
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, fontSize: 13, fontWeight: 600, cursor: tournament.status === "setup" ? "pointer" : "default" }}>
+                    <input
+                      type="checkbox" checked={!fixedPartners} disabled={tournament.status !== "setup"}
+                      onChange={(e) => setFixedPartners(!e.target.checked)}
+                    />
+                    Open play — rotate partners/opponents each round
+                  </label>
 
-                  <div className="field-label" style={{ marginTop: 14 }}>Playoffs</div>
-                  <select className="solid-input" value={advanceCount} onChange={(e) => setAdvanceCount(e.target.value)}>
-                    <option value={0}>No knockout stage — pool play only</option>
-                    <option value={1}>Top 1 per pool advances</option>
-                    <option value={2}>Top 2 per pool advance</option>
-                    <option value={3}>Top 3 per pool advance</option>
-                    <option value={4}>Top 4 per pool advance</option>
-                    <option value={5}>Top 5 per pool advance</option>
-                  </select>
+                  {fixedPartners && (
+                    <>
+                      <div className="field-label" style={{ marginTop: 14 }}>Pools</div>
+                      <input
+                        className="solid-input" type="number" min="1" value={numPools} disabled={tournament.status !== "setup"}
+                        onChange={(e) => setNumPools(e.target.value)}
+                      />
+
+                      <div className="field-label" style={{ marginTop: 14 }}>Playoffs</div>
+                      <select className="solid-input" value={advanceCount} onChange={(e) => setAdvanceCount(e.target.value)}>
+                        <option value={0}>No knockout stage — pool play only</option>
+                        <option value={1}>Top 1 per pool advances</option>
+                        <option value={2}>Top 2 per pool advance</option>
+                        <option value={3}>Top 3 per pool advance</option>
+                        <option value={4}>Top 4 per pool advance</option>
+                        <option value={5}>Top 5 per pool advance</option>
+                      </select>
+                    </>
+                  )}
                 </>
               )}
 
@@ -767,19 +911,93 @@ export default function Tournament({ session }) {
         ) : (
           <>
             <div className="event-tabs">
-              {tournament.status === "setup" && (
+              {tournament.fixed_partners === false ? (
                 <>
-                  <button className={`event-tab ${tab === "teams" ? "selected" : ""}`} onClick={() => setTab("teams")}>Teams &middot; {teams.length}</button>
+                  <button className={`event-tab ${tab === "teams" ? "selected" : ""}`} onClick={() => setTab("teams")}>Players &middot; {players.filter((p) => p.active).length}</button>
                   <button className={`event-tab ${tab === "courts" ? "selected" : ""}`} onClick={() => setTab("courts")}>Courts &middot; {courts.length}</button>
+                  <button className={`event-tab ${tab === "matches" ? "selected" : ""}`} onClick={() => setTab("matches")}>Matches</button>
                 </>
-              )}
-              {tournament.status !== "setup" && (
-                <button className={`event-tab ${tab === "matches" ? "selected" : ""}`} onClick={() => setTab("matches")}>Matches</button>
+              ) : (
+                <>
+                  {tournament.status === "setup" && (
+                    <>
+                      <button className={`event-tab ${tab === "teams" ? "selected" : ""}`} onClick={() => setTab("teams")}>Teams &middot; {teams.length}</button>
+                      <button className={`event-tab ${tab === "courts" ? "selected" : ""}`} onClick={() => setTab("courts")}>Courts &middot; {courts.length}</button>
+                    </>
+                  )}
+                  {tournament.status !== "setup" && (
+                    <button className={`event-tab ${tab === "matches" ? "selected" : ""}`} onClick={() => setTab("matches")}>Matches</button>
+                  )}
+                </>
               )}
               <button className={`event-tab ${tab === "standings" ? "selected" : ""}`} onClick={() => setTab("standings")}>Standings</button>
             </div>
 
-            {tab === "teams" && tournament.status === "setup" && (
+            {tab === "teams" && tournament.fixed_partners === false && (
+              <div className="body-scroll">
+                {isHost && (
+                  <form onSubmit={addPlayer} style={{ marginBottom: 16 }}>
+                    <div className="field-label">Player name</div>
+                    <input className="solid-input" value={playerName} onChange={(e) => setPlayerName(e.target.value)} placeholder="Name" />
+                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                      <select className="solid-input" value={playerGender} onChange={(e) => setPlayerGender(e.target.value)}>
+                        <option value="">Gender (optional)</option>
+                        <option value="men">Men</option>
+                        <option value="women">Women</option>
+                      </select>
+                      <input className="solid-input" value={playerLevel} onChange={(e) => setPlayerLevel(e.target.value)} placeholder="Level (optional)" />
+                    </div>
+                    <button className="btn btn-primary btn-block" style={{ marginTop: 10 }} type="submit">
+                      <Plus size={14} style={{ verticalAlign: -2 }} /> Add player
+                    </button>
+                    <div className="helper-text">
+                      Add players anytime, even mid-session — a latecomer gets automatically prioritized in future rounds until their game count catches up.
+                    </div>
+                  </form>
+                )}
+
+                {players.map((p) => (
+                  <div key={p.id} className="mine-card" style={{ opacity: p.active ? 1 : 0.5 }}>
+                    <div>
+                      <div className="name">{p.name}{!p.active && " (removed)"}</div>
+                      <div className="sub">{[p.gender, p.level].filter(Boolean).join(" \u00B7 ") || "No gender/level set"}</div>
+                    </div>
+                    {isHost && p.active && (
+                      <button className="icon-btn" style={{ color: "var(--coral)" }} onClick={() => removePlayer(p.id)}><X size={15} /></button>
+                    )}
+                  </div>
+                ))}
+
+                {isHost && (
+                  <div className="card" style={{ marginTop: 16 }}>
+                    <div className="field-label" style={{ marginBottom: 8 }}>
+                      {matches.length > 0 ? "Generate more rounds" : "Generate rounds"}
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input
+                        className="solid-input" type="number" min="1" value={roundsToGenerate}
+                        onChange={(e) => setRoundsToGenerate(e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                      <button
+                        className="btn btn-accent" style={{ padding: "0 18px", borderRadius: 12 }}
+                        onClick={() => generateOpenPlayRounds(Math.max(1, Number(roundsToGenerate) || 1))}
+                        disabled={generating || players.filter((p) => p.active).length < (tournament.match_type === "doubles" ? 4 : 2)}
+                      >
+                        {generating ? "Generating..." : "Generate"}
+                      </button>
+                    </div>
+                    {players.filter((p) => p.active).length < (tournament.match_type === "doubles" ? 4 : 2) && (
+                      <div className="helper-text">
+                        Need at least {tournament.match_type === "doubles" ? 4 : 2} active players to generate a round.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tab === "teams" && tournament.fixed_partners !== false && tournament.status === "setup" && (
               <div className="body-scroll">
                 {isHost && (
                   <form onSubmit={addTeam} style={{ marginBottom: 16 }}>
@@ -843,7 +1061,7 @@ export default function Tournament({ session }) {
               </div>
             )}
 
-            {tab === "courts" && tournament.status === "setup" && (
+            {tab === "courts" && (tournament.fixed_partners === false || tournament.status === "setup") && (
               <div className="body-scroll">
                 {isHost && (
                   <form onSubmit={addCourt} style={{ marginBottom: 16 }}>
@@ -887,7 +1105,7 @@ export default function Tournament({ session }) {
               </div>
             )}
 
-            {tab === "matches" && tournament.status !== "setup" && (
+            {tab === "matches" && (tournament.fixed_partners === false || tournament.status !== "setup") && (
               <div className="body-scroll">
                 {(tournament.num_pools > 1 ? [...new Set(matches.filter((m) => m.stage === "group").map((m) => m.pool_number))].sort((a, b) => a - b) : [1]).map((poolNum) => {
                   const poolMatches = tournament.num_pools > 1
@@ -1012,46 +1230,75 @@ export default function Tournament({ session }) {
                     </div>
                   );
                 })()}
-                {(tournament.num_pools > 1
-                  ? [...new Set(teams.map((t) => t.pool_number))].sort((a, b) => a - b)
-                  : [null]
-                ).map((poolNum) => (
-                  <div key={poolNum ?? "all"}>
-                    {poolNum !== null && (
-                      <div className="round-header" style={{ fontSize: 13, color: "var(--ink)" }}>POOL {poolNum}</div>
-                    )}
-                    <table className="standings-table">
-                      <thead>
-                        <tr>
-                          <th>Team</th>
-                          <th>GP</th>
-                          <th>W</th>
-                          <th>L</th>
-                          <th>T</th>
-                          <th>Win%</th>
-                          <th>+/-</th>
-                          <th>Tiebreak</th>
+                {tournament.fixed_partners === false ? (
+                  <table className="standings-table">
+                    <thead>
+                      <tr>
+                        <th>Player</th>
+                        <th>GP</th>
+                        <th>W</th>
+                        <th>L</th>
+                        <th>T</th>
+                        <th>Win%</th>
+                        <th>+/-</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {computePlayerStandings(players, teams, matches).map((s) => (
+                        <tr key={s.player.id} style={{ opacity: s.player.active ? 1 : 0.5 }}>
+                          <td>{s.player.name}{!s.player.active && " (removed)"}</td>
+                          <td>{s.played}</td>
+                          <td>{s.wins}</td>
+                          <td>{s.losses}</td>
+                          <td>{s.ties}</td>
+                          <td>{(s.winPct * 100).toFixed(0)}%</td>
+                          <td>{s.pointDiff > 0 ? `+${s.pointDiff}` : s.pointDiff}</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {standings
-                          .filter((s) => poolNum === null || s.team.pool_number === poolNum)
-                          .map((s) => (
-                            <tr key={s.team.id}>
-                              <td>{s.team.name}</td>
-                              <td>{s.played}</td>
-                              <td>{s.wins}</td>
-                              <td>{s.losses}</td>
-                              <td>{s.ties}</td>
-                              <td>{(s.winPct * 100).toFixed(0)}%</td>
-                              <td>{s.pointDiff > 0 ? `+${s.pointDiff}` : s.pointDiff}</td>
-                              <td style={{ fontSize: 10, color: "var(--fade)" }}>{s.tiebreakNote || "\u2014"}</td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  (tournament.num_pools > 1
+                    ? [...new Set(teams.map((t) => t.pool_number))].sort((a, b) => a - b)
+                    : [null]
+                  ).map((poolNum) => (
+                    <div key={poolNum ?? "all"}>
+                      {poolNum !== null && (
+                        <div className="round-header" style={{ fontSize: 13, color: "var(--ink)" }}>POOL {poolNum}</div>
+                      )}
+                      <table className="standings-table">
+                        <thead>
+                          <tr>
+                            <th>Team</th>
+                            <th>GP</th>
+                            <th>W</th>
+                            <th>L</th>
+                            <th>T</th>
+                            <th>Win%</th>
+                            <th>+/-</th>
+                            <th>Tiebreak</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {standings
+                            .filter((s) => poolNum === null || s.team.pool_number === poolNum)
+                            .map((s) => (
+                              <tr key={s.team.id}>
+                                <td>{s.team.name}</td>
+                                <td>{s.played}</td>
+                                <td>{s.wins}</td>
+                                <td>{s.losses}</td>
+                                <td>{s.ties}</td>
+                                <td>{(s.winPct * 100).toFixed(0)}%</td>
+                                <td>{s.pointDiff > 0 ? `+${s.pointDiff}` : s.pointDiff}</td>
+                                <td style={{ fontSize: 10, color: "var(--fade)" }}>{s.tiebreakNote || "\u2014"}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))
+                )}
                 {tournament.scoring_mode === "winloss" && (
                   <div className="helper-text" style={{ padding: "0 20px" }}>
                     Point differential isn't tracked in winner-only mode.
