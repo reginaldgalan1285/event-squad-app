@@ -380,8 +380,8 @@ export default function Tournament({ session }) {
   // any separate state.
   async function generateOpenPlayRounds(numRounds) {
     const activePlayers = players.filter((p) => p.active);
-    const minNeeded = tournament.match_type === "doubles" ? 4 : 2;
-    if (activePlayers.length < minNeeded) return;
+    const perMatch = tournament.match_type === "doubles" ? 4 : 2;
+    if (activePlayers.length < perMatch) return;
 
     setGenerating(true);
 
@@ -390,10 +390,28 @@ export default function Tournament({ session }) {
     let workingTeamsById = { ...Object.fromEntries(teams.map((t) => [t.id, t])) };
     const maxExistingRound = workingMatches.length > 0 ? Math.max(...workingMatches.map((m) => m.round_number)) : 0;
 
+    // A round is one time-slot — it should only hold as many matches as
+    // your actual courts can run at once, not one match for every group
+    // of 4 (or 2) players regardless of court count. With no courts
+    // defined yet, there's nothing to cap against, so every active
+    // player plays each round (the original behavior).
+    const capacity = courts.length > 0 ? courts.length * perMatch : activePlayers.length;
+
     for (let i = 0; i < numRounds; i++) {
       const history = buildOpenPlayHistory(workingMatches, workingTeamsById);
+
+      // Whoever has played the fewest games so far gets priority for this
+      // round's limited slots — the same rule that lets a latecomer catch up.
+      const ranked = [...activePlayers].sort(
+        (a, b) => (history.gamesPlayed[a.id] || 0) - (history.gamesPlayed[b.id] || 0)
+      );
+      const activeCount = Math.floor(Math.min(ranked.length, capacity) / perMatch) * perMatch;
+      const roundPool = ranked.slice(0, activeCount).map((p) => p.id);
+
+      if (roundPool.length < perMatch) break; // not enough players (or courts) for even one match
+
       const { matches: roundMatches } = generateOpenPlayRound({
-        players: activePlayers.map((p) => p.id),
+        players: roundPool,
         matchType: tournament.match_type,
         gamesPlayed: history.gamesPlayed,
         pastPartners: history.pastPartners,
@@ -999,6 +1017,11 @@ export default function Tournament({ session }) {
                         Need at least {tournament.match_type === "doubles" ? 4 : 2} active players to generate a round.
                       </div>
                     )}
+                    <div className="helper-text">
+                      {courts.length > 0
+                        ? `Each round plays up to ${courts.length} match${courts.length !== 1 ? "es" : ""} at once, matching your ${courts.length} court${courts.length !== 1 ? "s" : ""} — set this on the Courts tab.`
+                        : "No courts added yet — every active player will be scheduled each round with no cap. Add courts on the Courts tab to limit how many matches run per round."}
+                    </div>
                   </div>
                 )}
               </div>
