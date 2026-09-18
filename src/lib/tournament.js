@@ -312,21 +312,26 @@ export function computePlayerStandings(players, teams, matches) {
     // 3+ tied: point differential scoped to matches against another tied player.
     const groupIds = new Set(group.map((g) => g.player.id));
     const miniDiff = Object.fromEntries(group.map((g) => [g.player.id, 0]));
+    let hadGroupMatchup = false;
     for (const m of completed) {
       if (m.team1_score == null || m.team2_score == null) continue;
       const p1s = resolvePlayers(m.team1_id);
       const p2s = resolvePlayers(m.team2_id);
+      const team1HasTied = p1s.some((pid) => groupIds.has(pid));
+      const team2HasTied = p2s.some((pid) => groupIds.has(pid));
+      if (!team1HasTied || !team2HasTied) continue; // not a matchup between two tied-group members
+      hadGroupMatchup = true;
       const diff = m.team1_score - m.team2_score;
-      const p1HasTiedOpponent = p2s.some((pid) => groupIds.has(pid));
-      const p2HasTiedOpponent = p1s.some((pid) => groupIds.has(pid));
-      if (p1HasTiedOpponent) p1s.forEach((pid) => { if (groupIds.has(pid)) miniDiff[pid] += diff; });
-      if (p2HasTiedOpponent) p2s.forEach((pid) => { if (groupIds.has(pid)) miniDiff[pid] -= diff; });
+      p1s.forEach((pid) => { if (groupIds.has(pid)) miniDiff[pid] += diff; });
+      p2s.forEach((pid) => { if (groupIds.has(pid)) miniDiff[pid] -= diff; });
     }
     for (const g of group) {
       const d = miniDiff[g.player.id];
-      g.tiebreakNote = `Group ${d > 0 ? "+" : ""}${d}`;
+      g.tiebreakNote = hadGroupMatchup ? `Group ${d > 0 ? "+" : ""}${d}` : `Overall ${g.pointDiff > 0 ? "+" : ""}${g.pointDiff}`;
     }
-    orderedGroups.push([...group].sort((x, y) => miniDiff[y.player.id] - miniDiff[x.player.id]));
+    orderedGroups.push(
+      [...group].sort((x, y) => miniDiff[y.player.id] - miniDiff[x.player.id] || y.pointDiff - x.pointDiff)
+    );
   }
 
   return orderedGroups.flat();
