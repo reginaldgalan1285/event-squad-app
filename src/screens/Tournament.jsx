@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Plus, Trophy, Play, X, Pencil, Check } from "lucide-react";
 import { supabase } from "../supabaseClient";
-import { generateRoundRobin, buildBracketSkeleton, computeStandings, roundLabel, generateOpenPlayRound, computePlayerStandings, buildOpenPlayHistory } from "../lib/tournament";
+import { generateRoundRobin, buildBracketSkeleton, computeStandings, roundLabel, generateOpenPlayRound, computePlayerStandings, buildOpenPlayHistory, selectRoundPool } from "../lib/tournament";
 
 function MatchTimer({ match }) {
   const [, forceTick] = useState(0);
@@ -424,7 +424,7 @@ export default function Tournament({ session }) {
         (a, b) => (history.gamesPlayed[a.id] || 0) - (history.gamesPlayed[b.id] || 0)
       );
       const activeCount = Math.floor(Math.min(ranked.length, capacity) / perMatch) * perMatch;
-      const roundPool = ranked.slice(0, activeCount).map((p) => p.id);
+      const roundPool = selectRoundPool(ranked, activeCount, !!tournament.require_mixed_doubles, tournament.match_type);
 
       if (roundPool.length < perMatch) break; // not enough players (or courts) for even one match
 

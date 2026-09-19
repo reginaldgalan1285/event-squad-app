@@ -114,6 +114,24 @@ function teamPairKey(teamA, teamB) {
 // partners/opponents are avoided where possible, but with small groups
 // or many rounds a repeat is sometimes unavoidable — this is a fairness
 // heuristic, not a mathematically perfect covering design.
+// Picks which players fill this round's limited slots. Normally that's
+// just "whoever has played the fewest games" — but when mixed doubles is
+// required, picking purely by that rule can accidentally select an
+// unbalanced group (e.g. 3 men + 1 woman out of 6 players) that literally
+// cannot form all-mixed pairs no matter how good the pairing step is.
+// This aims for an even men/women split first, then applies the
+// fewest-games priority within each gender.
+export function selectRoundPool(rankedPlayers, activeCount, requireMixedDoubles, matchType) {
+  if (!requireMixedDoubles || matchType !== "doubles") {
+    return rankedPlayers.slice(0, activeCount).map((p) => p.id);
+  }
+  const women = rankedPlayers.filter((p) => p.gender === "women");
+  const nonWomen = rankedPlayers.filter((p) => p.gender !== "women");
+  const targetWomen = Math.min(Math.floor(activeCount / 2), women.length, nonWomen.length);
+  const targetOthers = activeCount - targetWomen;
+  return [...women.slice(0, targetWomen), ...nonWomen.slice(0, targetOthers)].map((p) => p.id);
+}
+
 export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPartners, pastOpponents, genderById = {}, requireMixedForWomen = false }) {
   const sorted = [...players].sort((a, b) => (gamesPlayed[a] || 0) - (gamesPlayed[b] || 0));
 
