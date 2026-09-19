@@ -1361,19 +1361,31 @@ export default function Tournament({ session }) {
                   </form>
                 )}
 
-                {players.map((p) => (
-                  <div key={p.id} className="mine-card" style={{ opacity: p.active ? 1 : 0.5 }}>
-                    <div>
-                      <div className="name">{p.name}{!p.active && " (removed)"}</div>
-                      <div className="sub">
-                        {[tournament.num_pools > 1 ? `Pool ${p.pool_number}` : null, p.gender, p.level].filter(Boolean).join(" \u00B7 ") || "No gender/level set"}
+                {(() => {
+                  const renderPlayerCard = (p) => (
+                    <div key={p.id} className="mine-card" style={{ opacity: p.active ? 1 : 0.5 }}>
+                      <div>
+                        <div className="name">{p.name}{!p.active && " (removed)"}</div>
+                        <div className="sub">{[p.gender, p.level].filter(Boolean).join(" \u00B7 ") || "No gender/level set"}</div>
                       </div>
+                      {isHost && p.active && (
+                        <button className="icon-btn" style={{ color: "var(--coral)" }} onClick={() => removePlayer(p.id)}><X size={15} /></button>
+                      )}
                     </div>
-                    {isHost && p.active && (
-                      <button className="icon-btn" style={{ color: "var(--coral)" }} onClick={() => removePlayer(p.id)}><X size={15} /></button>
-                    )}
-                  </div>
-                ))}
+                  );
+
+                  if (tournament.num_pools > 1) {
+                    return [...new Set(players.map((p) => p.pool_number))].sort((a, b) => a - b).map((poolNum) => (
+                      <div key={poolNum}>
+                        <div className="round-header" style={{ fontSize: 13, color: "var(--ink)", paddingTop: 12 }}>
+                          POOL {poolNum} &middot; {players.filter((p) => p.pool_number === poolNum && p.active).length}
+                        </div>
+                        {players.filter((p) => p.pool_number === poolNum).map(renderPlayerCard)}
+                      </div>
+                    ));
+                  }
+                  return players.map(renderPlayerCard);
+                })()}
 
                 {isHost && tournament.num_pools > 1 && players.filter((p) => p.active).length >= 2 && (
                   <button className="btn btn-primary btn-block" style={{ marginTop: 4, marginBottom: 12 }} onClick={autoAssignPlayerPools}>
@@ -1426,7 +1438,7 @@ export default function Tournament({ session }) {
 
             {tab === "teams" && tournament.fixed_partners !== false && (
               <div className="body-scroll">
-                {isHost && (
+                {isHost && tournament.status === "setup" && (
                   <form onSubmit={addTeam} style={{ marginBottom: 16 }}>
                     <div className="field-label">Player 1</div>
                     <input className="solid-input" value={player1} onChange={(e) => setPlayer1(e.target.value)} placeholder="Name" />
@@ -1470,43 +1482,61 @@ export default function Tournament({ session }) {
                   </form>
                 )}
 
-                {teams.map((t) => (
-                  <div key={t.id} className="mine-card">
-                    <div>
-                      <div className="name">{t.name}</div>
-                      <div className="sub">
-                        {[
-                          tournament.num_pools > 1 ? `Pool ${t.pool_number}` : null,
-                          tournament.format === "single_elim" && t.seed ? `Seed ${t.seed}` : null,
-                          t.gender,
-                          t.level,
-                        ].filter(Boolean).join(" \u00B7 ") || "No gender/level set"}
+                {(() => {
+                  const renderTeamCard = (t) => (
+                    <div key={t.id} className="mine-card">
+                      <div>
+                        <div className="name">{t.name}</div>
+                        <div className="sub">
+                          {[
+                            tournament.format === "single_elim" && t.seed ? `Seed ${t.seed}` : null,
+                            t.gender,
+                            t.level,
+                          ].filter(Boolean).join(" \u00B7 ") || "No gender/level set"}
+                        </div>
                       </div>
+                      {isHost && tournament.status === "setup" && (
+                        <button className="icon-btn" style={{ color: "var(--coral)" }} onClick={() => removeTeam(t.id)}><X size={15} /></button>
+                      )}
                     </div>
-                    {isHost && (
-                      <button className="icon-btn" style={{ color: "var(--coral)" }} onClick={() => removeTeam(t.id)}><X size={15} /></button>
-                    )}
-                  </div>
-                ))}
+                  );
 
-                {isHost && teams.length >= 2 && tournament.format === "round_robin" && tournament.num_pools > 1 && (
+                  if (tournament.format === "round_robin" && tournament.num_pools > 1) {
+                    return [...new Set(teams.map((t) => t.pool_number))].sort((a, b) => a - b).map((poolNum) => (
+                      <div key={poolNum}>
+                        <div className="round-header" style={{ fontSize: 13, color: "var(--ink)", paddingTop: 12 }}>
+                          POOL {poolNum} &middot; {teams.filter((t) => t.pool_number === poolNum).length}
+                        </div>
+                        {teams.filter((t) => t.pool_number === poolNum).map(renderTeamCard)}
+                      </div>
+                    ));
+                  }
+                  return teams.map(renderTeamCard);
+                })()}
+
+                {isHost && tournament.status === "setup" && teams.length >= 2 && tournament.format === "round_robin" && tournament.num_pools > 1 && (
                   <button className="btn btn-primary btn-block" style={{ marginTop: 16 }} onClick={autoAssignPools}>
                     Auto-assign pools
                   </button>
                 )}
-                {isHost && teams.length >= 2 && tournament.format === "single_elim" && (
+                {isHost && tournament.status === "setup" && teams.length >= 2 && tournament.format === "single_elim" && (
                   <button className="btn btn-primary btn-block" style={{ marginTop: 16 }} onClick={randomizeSeeding}>
                     Randomize seeding
                   </button>
                 )}
 
-                {isHost && teams.length >= 2 && (
+                {isHost && tournament.status === "setup" && teams.length >= 2 && (
                   <button className="btn btn-accent btn-block" style={{ marginTop: 10 }} onClick={generateMatches} disabled={generating}>
                     {generating ? "Generating..." : `Generate ${tournament.format === "round_robin" ? "round robin" : "bracket"}`}
                   </button>
                 )}
-                {isHost && teams.length < 2 && (
+                {isHost && tournament.status === "setup" && teams.length < 2 && (
                   <div className="helper-text">Add at least 2 teams to generate matches.</div>
+                )}
+                {tournament.status !== "setup" && (
+                  <div className="helper-text" style={{ marginTop: 12 }}>
+                    Matches have already been generated — the roster is locked. See the Matches tab for results.
+                  </div>
                 )}
               </div>
             )}
