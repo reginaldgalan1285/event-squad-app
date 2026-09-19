@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Plus, Trophy, Play, X, Pencil } from "lucide-react";
+import { ArrowLeft, Plus, Trophy, Play, X, Pencil, Check } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { generateRoundRobin, buildBracketSkeleton, computeStandings, roundLabel, generateOpenPlayRound, computePlayerStandings, buildOpenPlayHistory } from "../lib/tournament";
 
@@ -78,6 +78,9 @@ export default function Tournament({ session }) {
   const [scoreDrafts, setScoreDrafts] = useState({});
   const [editingMatchId, setEditingMatchId] = useState(null);
   const [createError, setCreateError] = useState("");
+  const [swappingSide, setSwappingSide] = useState(null); // { matchId, side: 'team1'|'team2' }
+  const [swapDraft, setSwapDraft] = useState({ p1: "", p2: "" });
+  const [lastGeneratedFromRound, setLastGeneratedFromRound] = useState(null);
 
   const isHost = !!session && event?.host_id === session.user.id;
 
@@ -481,7 +484,81 @@ export default function Tournament({ session }) {
     const { data: freshMatches } = await supabase.from("tournament_matches").select("*").eq("tournament_id", tournament.id);
     await assignCourts((freshMatches || []).filter((m) => m.round_number > maxExistingRound), courts, Object.values(workingTeamsById));
 
+    setLastGeneratedFromRound(maxExistingRound);
     setGenerating(false);
+    await loadAll();
+  }
+
+  // Removes exactly the rounds the last "Generate" call created — e.g.
+  // after realizing a player was added by mistake. Only offered while
+  // none of those rounds have actually been started, so it can never
+  // erase a real result.
+  async function undoLastGeneration() {
+    if (lastGeneratedFromRound === null) return;
+    const roundsToRemove = matches.filter((m) => m.round_number > lastGeneratedFromRound);
+    if (roundsToRemove.length === 0) {
+      setLastGeneratedFromRound(null);
+      return;
+    }
+    if (roundsToRemove.some((m) => m.status !== "scheduled")) {
+      alert("Some of those matches have already started or been completed — undo is only available before any of the newly generated rounds have been played.");
+      return;
+    }
+    const roundCount = new Set(roundsToRemove.map((m) => m.round_number)).size;
+    if (!window.confirm(`Remove the ${roundCount} round${roundCount !== 1 ? "s" : ""} just generated? This can't be undone.`)) return;
+
+    const teamIdsToRemove = new Set();
+    roundsToRemove.forEach((m) => {
+      if (m.team1_id) teamIdsToRemove.add(m.team1_id);
+      if (m.team2_id) teamIdsToRemove.add(m.team2_id);
+    });
+
+    await supabase.from("tournament_matches").delete().in("id", roundsToRemove.map((m) => m.id));
+    if (teamIdsToRemove.size > 0) {
+      await supabase.from("tournament_teams").delete().in("id", [...teamIdsToRemove]);
+    }
+
+    setLastGeneratedFromRound(null);
+    await loadAll();
+  }
+
+  function beginSwap(match, side) {
+    const teamId = side === "team1" ? match.team1_id : match.team2_id;
+    const team = teamsById[teamId];
+    setSwapDraft({ p1: team?.player1_id || "", p2: team?.player2_id || "" });
+    setSwappingSide({ matchId: match.id, side });
+  }
+
+  async function saveSwap() {
+    const { matchId, side } = swappingSide;
+    const match = matches.find((m) => m.id === matchId);
+    if (!match) return;
+    const teamId = side === "team1" ? match.team1_id : match.team2_id;
+    const playersById = Object.fromEntries(players.map((p) => [p.id, p]));
+    const p1 = swapDraft.p1 ? playersById[swapDraft.p1] : null;
+    const p2 = swapDraft.p2 ? playersById[swapDraft.p2] : null;
+
+    const derivedGender = !p2
+      ? p1?.gender || null
+      : p1?.gender && p2?.gender
+      ? (p1.gender === p2.gender ? p1.gender : "mixed")
+      : null;
+    const derivedLevel = !p2 ? p1?.level || null : p1?.level && p1.level === p2?.level ? p1.level : null;
+
+    await supabase
+      .from("tournament_teams")
+      .update({
+        player1_id: swapDraft.p1 || null,
+        player2_id: swapDraft.p2 || null,
+        player1_name: p1?.name || "?",
+        player2_name: p2 ? p2.name : null,
+        name: [p1?.name, p2?.name].filter(Boolean).join(" / "),
+        gender: derivedGender,
+        level: derivedLevel,
+      })
+      .eq("id", teamId);
+
+    setSwappingSide(null);
     await loadAll();
   }
 
@@ -617,12 +694,64 @@ export default function Tournament({ session }) {
       );
     }
 
+    const canSwap = isHost && tournament.fixed_partners === false && m.status === "scheduled";
+    const activePlayers = players.filter((p) => p.active);
+
+    function renderTeamSide(team, teamId, side, align) {
+      const isSwapping = swappingSide?.matchId === m.id && swappingSide?.side === side;
+      if (isSwapping) {
+        const otherSideIds = side === "team1"
+          ? [t2 ? t2.player1_id : null, t2 ? t2.player2_id : null]
+          : [t1 ? t1.player1_id : null, t1 ? t1.player2_id : null];
+        const slots = tournament.match_type === "doubles" ? ["p1", "p2"] : ["p1"];
+        return (
+          <div style={{ flex: 1, textAlign: align }}>
+            {slots.map((slot) => {
+              const otherSlot = slot === "p1" ? "p2" : "p1";
+              const excluded = new Set([...otherSideIds, swapDraft[otherSlot]].filter(Boolean));
+              return (
+                <select
+                  key={slot}
+                  value={swapDraft[slot] || ""}
+                  onChange={(e) => setSwapDraft((d) => ({ ...d, [slot]: e.target.value }))}
+                  style={{ fontSize: 11, marginBottom: 3, width: "100%", border: "1px solid var(--line)", borderRadius: 6, padding: "2px 4px" }}
+                >
+                  <option value="">— none —</option>
+                  {activePlayers.filter((p) => !excluded.has(p.id)).map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              );
+            })}
+            <div style={{ display: "flex", gap: 4, marginTop: 2, justifyContent: align === "right" ? "flex-end" : "flex-start" }}>
+              <button className="icon-btn" style={{ color: "var(--green)" }} onClick={saveSwap}><Check size={13} /></button>
+              <button className="icon-btn" style={{ color: "var(--fade)" }} onClick={() => setSwappingSide(null)}><X size={13} /></button>
+            </div>
+          </div>
+        );
+      }
+      return (
+        <div className={`tmatch-team ${m.winner_team_id === teamId ? "winner" : ""}`} style={{ textAlign: align, flex: 1 }}>
+          {team?.name || "TBD"}
+          {canSwap && (
+            <button
+              onClick={() => beginSwap(m, side)}
+              style={{ background: "none", border: "none", color: "var(--fade)", padding: 0, marginLeft: 4, cursor: "pointer", verticalAlign: -1 }}
+              title="Swap player"
+            >
+              <Pencil size={10} />
+            </button>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div key={m.id} className="tmatch-card">
         <div className="tmatch-teams">
-          <div className={`tmatch-team ${m.winner_team_id === m.team1_id ? "winner" : ""}`}>{t1?.name || "TBD"}</div>
+          {renderTeamSide(t1, m.team1_id, "team1", "left")}
           <div className="tmatch-vs">vs</div>
-          <div className={`tmatch-team ${m.winner_team_id === m.team2_id ? "winner" : ""}`} style={{ textAlign: "right" }}>{t2?.name || "TBD"}</div>
+          {renderTeamSide(t2, m.team2_id, "team2", "right")}
         </div>
 
         {m.status === "completed" && (
@@ -711,6 +840,7 @@ export default function Tournament({ session }) {
   }
 
   const teamsById = Object.fromEntries(teams.map((t) => [t.id, t]));
+  const playersById = Object.fromEntries(players.map((p) => [p.id, p]));
   const courtsById = Object.fromEntries(courts.map((c) => [c.id, c]));
   const groupStageMatches = matches.filter((m) => m.stage === "group");
   const playoffStageMatches = matches.filter((m) => m.stage === "playoff");
@@ -1038,6 +1168,15 @@ export default function Tournament({ session }) {
                         ? `Each round plays up to ${courts.length} match${courts.length !== 1 ? "es" : ""} at once, matching your ${courts.length} court${courts.length !== 1 ? "s" : ""} — set this on the Courts tab.`
                         : "No courts added yet — every active player will be scheduled each round with no cap. Add courts on the Courts tab to limit how many matches run per round."}
                     </div>
+
+                    {lastGeneratedFromRound !== null && matches.some((m) => m.round_number > lastGeneratedFromRound) && (
+                      <button
+                        onClick={undoLastGeneration}
+                        style={{ width: "100%", marginTop: 10, background: "none", border: "none", color: "var(--coral)", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 4 }}
+                      >
+                        Undo last generation
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
