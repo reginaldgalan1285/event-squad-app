@@ -57,6 +57,7 @@ export default function Tournament({ session }) {
   const [advanceCount, setAdvanceCount] = useState(0);
   const [generatingPlayoffs, setGeneratingPlayoffs] = useState(false);
   const [fixedPartners, setFixedPartners] = useState(true);
+  const [requireMixedDoubles, setRequireMixedDoubles] = useState(false);
   const [players, setPlayers] = useState([]);
   const [playerName, setPlayerName] = useState("");
   const [playerGender, setPlayerGender] = useState("");
@@ -149,6 +150,7 @@ export default function Tournament({ session }) {
         timer_enabled: timerEnabled,
         advance_count: format === "round_robin" && fixedPartners ? Number(advanceCount) || 0 : 0,
         fixed_partners: format === "round_robin" ? fixedPartners : true,
+        require_mixed_doubles: format === "round_robin" && !fixedPartners && matchType === "doubles" ? requireMixedDoubles : false,
       })
       .select()
       .single();
@@ -161,6 +163,7 @@ export default function Tournament({ session }) {
       setName("Tournament"); setFormat("round_robin"); setMatchType("doubles");
       setScoringMode("score"); setDefaultMinutes(15); setNumPools(1); setTimerEnabled(true); setAdvanceCount(0);
       setFixedPartners(true);
+      setRequireMixedDoubles(false);
       await loadAll();
       openTournament(data.id);
     }
@@ -182,6 +185,9 @@ export default function Tournament({ session }) {
     }
     if (tournament.format === "round_robin" && (tournament.fixed_partners !== false)) {
       updates.advance_count = Number(advanceCount) || 0;
+    }
+    if (tournament.fixed_partners === false && tournament.match_type === "doubles") {
+      updates.require_mixed_doubles = requireMixedDoubles;
     }
     await supabase.from("tournaments").update(updates).eq("id", tournament.id);
     setEditingSettings(false);
@@ -206,6 +212,7 @@ export default function Tournament({ session }) {
     setTimerEnabled(tournament.timer_enabled);
     setAdvanceCount(tournament.advance_count || 0);
     setFixedPartners(tournament.fixed_partners !== false);
+    setRequireMixedDoubles(!!tournament.require_mixed_doubles);
     setEditingSettings(true);
   }
 
@@ -427,6 +434,8 @@ export default function Tournament({ session }) {
         gamesPlayed: history.gamesPlayed,
         pastPartners: history.pastPartners,
         pastOpponents: history.pastOpponents,
+        genderById: Object.fromEntries(players.map((p) => [p.id, p.gender])),
+        requireMixedForWomen: !!tournament.require_mixed_doubles,
       });
       if (roundMatches.length === 0) break; // not enough players to form even one match
 
@@ -931,6 +940,13 @@ export default function Tournament({ session }) {
                       No fixed teams. Add individual players; every round pairs people up fresh so everyone gets a chance to partner with — and play against — everyone else.
                     </div>
 
+                    {!fixedPartners && matchType === "doubles" && (
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                        <input type="checkbox" checked={requireMixedDoubles} onChange={(e) => setRequireMixedDoubles(e.target.checked)} />
+                        Ensure mixed doubles whenever a woman is included
+                      </label>
+                    )}
+
                     {fixedPartners && (
                       <>
                         <div className="field-label" style={{ marginTop: 14 }}>Pools</div>
@@ -1018,6 +1034,13 @@ export default function Tournament({ session }) {
                     />
                     Open play — rotate partners/opponents each round
                   </label>
+
+                  {!fixedPartners && matchType === "doubles" && (
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                      <input type="checkbox" checked={requireMixedDoubles} onChange={(e) => setRequireMixedDoubles(e.target.checked)} />
+                      Ensure mixed doubles whenever a woman is included
+                    </label>
+                  )}
 
                   {fixedPartners && (
                     <>

@@ -114,8 +114,20 @@ function teamPairKey(teamA, teamB) {
 // partners/opponents are avoided where possible, but with small groups
 // or many rounds a repeat is sometimes unavoidable — this is a fairness
 // heuristic, not a mathematically perfect covering design.
-export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPartners, pastOpponents }) {
+export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPartners, pastOpponents, genderById = {}, requireMixedForWomen = false }) {
   const sorted = [...players].sort((a, b) => (gamesPlayed[a] || 0) - (gamesPlayed[b] || 0));
+
+  // When enabled, a woman's partner pool excludes other women — unless
+  // no non-woman candidate is actually available this round, in which
+  // case it falls back to whoever's left rather than forcing her to
+  // sit out entirely.
+  function partnerPool(p, candidates) {
+    if (requireMixedForWomen && genderById[p] === "women") {
+      const nonWomen = candidates.filter((o) => genderById[o] !== "women");
+      if (nonWomen.length > 0) return nonWomen;
+    }
+    return candidates;
+  }
 
   if (matchType === "singles") {
     const used = new Set();
@@ -137,8 +149,10 @@ export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPar
   const partnerships = [];
   for (const p of sorted) {
     if (usedForPartner.has(p)) continue;
-    let partner = sorted.find((o) => o !== p && !usedForPartner.has(o) && !pastPartners.has(pairKey(p, o)));
-    if (!partner) partner = sorted.find((o) => o !== p && !usedForPartner.has(o));
+    const candidates = sorted.filter((o) => o !== p && !usedForPartner.has(o));
+    const pool = partnerPool(p, candidates);
+    let partner = pool.find((o) => !pastPartners.has(pairKey(p, o)));
+    if (!partner) partner = pool[0];
     if (partner) {
       usedForPartner.add(p); usedForPartner.add(partner);
       partnerships.push([p, partner]);
