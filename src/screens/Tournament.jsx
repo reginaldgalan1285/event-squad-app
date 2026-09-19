@@ -1,8 +1,48 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Plus, Trophy, Play, X, Pencil, Check } from "lucide-react";
+import { ArrowLeft, Plus, Trophy, Play, X, Pencil, Check, Download } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { generateRoundRobin, buildBracketSkeleton, computeStandings, roundLabel, generateOpenPlayRound, computePlayerStandings, buildOpenPlayHistory, selectRoundPool } from "../lib/tournament";
+import jsPDF from "jspdf";
+
+function LevelsEditor({ levelNames, setLevelNames, newLevelInput, setNewLevelInput }) {
+  function addLevel() {
+    const trimmed = newLevelInput.trim();
+    if (!trimmed || levelNames.includes(trimmed)) return;
+    setLevelNames((arr) => [...arr, trimmed]);
+    setNewLevelInput("");
+  }
+  return (
+    <>
+      <div className="field-label" style={{ marginTop: 14 }}>Skill levels (optional)</div>
+      <div className="helper-text" style={{ marginBottom: 8 }}>
+        Define named levels (e.g. Beginner, Intermediate, Advanced) to pick from everywhere a level is set, instead of typing one freehand each time.
+      </div>
+      {levelNames.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+          {levelNames.map((lvl) => (
+            <span key={lvl} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "var(--chalk)", borderRadius: 999, padding: "4px 10px", fontSize: 12, fontWeight: 600 }}>
+              {lvl}
+              <button type="button" onClick={() => setLevelNames((arr) => arr.filter((l) => l !== lvl))} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--coral)", display: "flex" }}>
+                <X size={11} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          className="solid-input" value={newLevelInput} onChange={(e) => setNewLevelInput(e.target.value)}
+          placeholder="e.g. Intermediate"
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addLevel(); } }}
+        />
+        <button type="button" className="btn btn-primary btn-icon-square" onClick={addLevel}>
+          <Plus size={15} />
+        </button>
+      </div>
+    </>
+  );
+}
 
 function MatchTimer({ match }) {
   const [, forceTick] = useState(0);
@@ -58,6 +98,8 @@ export default function Tournament({ session }) {
   const [generatingPlayoffs, setGeneratingPlayoffs] = useState(false);
   const [fixedPartners, setFixedPartners] = useState(true);
   const [requireMixedDoubles, setRequireMixedDoubles] = useState(false);
+  const [levelNames, setLevelNames] = useState([]);
+  const [newLevelInput, setNewLevelInput] = useState("");
   const [players, setPlayers] = useState([]);
   const [playerName, setPlayerName] = useState("");
   const [playerGender, setPlayerGender] = useState("");
@@ -151,6 +193,7 @@ export default function Tournament({ session }) {
         advance_count: format === "round_robin" && fixedPartners ? Number(advanceCount) || 0 : 0,
         fixed_partners: format === "round_robin" ? fixedPartners : true,
         require_mixed_doubles: format === "round_robin" && !fixedPartners && matchType === "doubles" ? requireMixedDoubles : false,
+        level_names: levelNames,
       })
       .select()
       .single();
@@ -164,6 +207,7 @@ export default function Tournament({ session }) {
       setScoringMode("score"); setDefaultMinutes(15); setNumPools(1); setTimerEnabled(true); setAdvanceCount(0);
       setFixedPartners(true);
       setRequireMixedDoubles(false);
+      setLevelNames([]);
       await loadAll();
       openTournament(data.id);
     }
@@ -189,6 +233,7 @@ export default function Tournament({ session }) {
     if (tournament.fixed_partners === false && tournament.match_type === "doubles") {
       updates.require_mixed_doubles = requireMixedDoubles;
     }
+    updates.level_names = levelNames;
     await supabase.from("tournaments").update(updates).eq("id", tournament.id);
     setEditingSettings(false);
     await loadAll();
@@ -213,6 +258,7 @@ export default function Tournament({ session }) {
     setAdvanceCount(tournament.advance_count || 0);
     setFixedPartners(tournament.fixed_partners !== false);
     setRequireMixedDoubles(!!tournament.require_mixed_doubles);
+    setLevelNames(tournament.level_names || []);
     setEditingSettings(true);
   }
 
@@ -685,6 +731,82 @@ export default function Tournament({ session }) {
     setEditingMatchId(m.id);
   }
 
+  function downloadSchedulePDF() {
+    const doc = new jsPDF();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let y = 18;
+
+    function ensureRoom(lines = 1) {
+      if (y + lines * 6 > pageHeight - 12) {
+        doc.addPage();
+        y = 18;
+      }
+    }
+
+    doc.setFontSize(16);
+    doc.setFont(undefined, "bold");
+    doc.text(tournament.name, 14, y);
+    y += 7;
+    doc.setFontSize(10);
+    doc.setFont(undefined, "normal");
+    if (event?.title) { doc.text(event.title, 14, y); y += 5; }
+    doc.text(`${tournament.format === "round_robin" ? "Round robin" : "Bracket"} \u00B7 ${tournament.match_type}`, 14, y);
+    y += 8;
+
+    function printMatchLine(m) {
+      ensureRoom();
+      const t1 = m.team1_id ? teamsById[m.team1_id]?.name : "TBD";
+      const t2 = m.status === "bye" ? "BYE" : m.team2_id ? teamsById[m.team2_id]?.name : "TBD";
+      const court = m.court_id ? courtsById[m.court_id]?.label : "No court";
+      let line = `${t1}  vs  ${t2}   (${court})`;
+      if (m.status === "completed") {
+        line += m.is_tie ? "  \u2013 Tied" : tournament.scoring_mode === "score" ? `  \u2013 ${m.team1_score}-${m.team2_score}` : "  \u2013 Final";
+      }
+      doc.setFontSize(10);
+      doc.text(line, 18, y);
+      y += 6;
+    }
+
+    function printRounds(roundMatches, label) {
+      if (roundMatches.length === 0) return;
+      if (label) {
+        ensureRoom(2);
+        doc.setFontSize(13);
+        doc.setFont(undefined, "bold");
+        doc.text(label, 14, y);
+        y += 7;
+      }
+      const rounds = [...new Set(roundMatches.map((m) => m.round_number))].sort((a, b) => a - b);
+      const total = Math.max(...rounds);
+      for (const r of rounds) {
+        ensureRoom(2);
+        doc.setFontSize(11);
+        doc.setFont(undefined, "bold");
+        const heading = tournament.fixed_partners === false || tournament.format === "round_robin"
+          ? `Round ${r}`
+          : roundLabel(r, total);
+        doc.text(heading, 14, y);
+        y += 6;
+        doc.setFont(undefined, "normal");
+        roundMatches.filter((m) => m.round_number === r).forEach(printMatchLine);
+        y += 2;
+      }
+    }
+
+    const groupMatches = matches.filter((m) => m.stage === "group");
+    const playoffMatches = matches.filter((m) => m.stage === "playoff");
+
+    if (tournament.num_pools > 1) {
+      const pools = [...new Set(groupMatches.map((m) => m.pool_number))].sort((a, b) => a - b);
+      pools.forEach((p) => printRounds(groupMatches.filter((m) => m.pool_number === p), `Pool ${p}`));
+    } else {
+      printRounds(groupMatches, null);
+    }
+    if (playoffMatches.length > 0) printRounds(playoffMatches, "Playoffs");
+
+    doc.save(`${tournament.name.replace(/[^a-z0-9]+/gi, "_")}_schedule.pdf`);
+  }
+
   function renderMatchCard(m) {
     const t1 = m.team1_id ? teamsById[m.team1_id] : null;
     const t2 = m.team2_id ? teamsById[m.team2_id] : null;
@@ -924,6 +1046,8 @@ export default function Tournament({ session }) {
                 <div className="field-label">Tournament name</div>
                 <input className="solid-input" value={name} onChange={(e) => setName(e.target.value)} />
 
+                <LevelsEditor levelNames={levelNames} setLevelNames={setLevelNames} newLevelInput={newLevelInput} setNewLevelInput={setNewLevelInput} />
+
                 <div className="field-label" style={{ marginTop: 14 }}>Format</div>
                 <select className="solid-input" value={format} onChange={(e) => setFormat(e.target.value)}>
                   <option value="round_robin">Round robin</option>
@@ -1012,6 +1136,8 @@ export default function Tournament({ session }) {
             <form onSubmit={saveTournamentSettings} style={{ padding: "16px 20px" }}>
               <div className="field-label">Tournament name</div>
               <input className="solid-input" value={name} onChange={(e) => setName(e.target.value)} />
+
+              <LevelsEditor levelNames={levelNames} setLevelNames={setLevelNames} newLevelInput={newLevelInput} setNewLevelInput={setNewLevelInput} />
 
               {tournament.status !== "setup" && (
                 <div className="helper-text" style={{ marginTop: 10 }}>
@@ -1139,7 +1265,14 @@ export default function Tournament({ session }) {
                         <option value="men">Men</option>
                         <option value="women">Women</option>
                       </select>
-                      <input className="solid-input" value={playerLevel} onChange={(e) => setPlayerLevel(e.target.value)} placeholder="Level (optional)" />
+                      {tournament.level_names?.length > 0 ? (
+                        <select className="solid-input" value={playerLevel} onChange={(e) => setPlayerLevel(e.target.value)}>
+                          <option value="">Level (optional)</option>
+                          {tournament.level_names.map((lvl) => <option key={lvl} value={lvl}>{lvl}</option>)}
+                        </select>
+                      ) : (
+                        <input className="solid-input" value={playerLevel} onChange={(e) => setPlayerLevel(e.target.value)} placeholder="Level (optional)" />
+                      )}
                     </div>
                     <button className="btn btn-primary btn-block" style={{ marginTop: 10 }} type="submit">
                       <Plus size={14} style={{ verticalAlign: -2 }} /> Add player
@@ -1226,7 +1359,14 @@ export default function Tournament({ session }) {
                         <option value="women">Women</option>
                         <option value="mixed">Mixed</option>
                       </select>
-                      <input className="solid-input" value={teamLevel} onChange={(e) => setTeamLevel(e.target.value)} placeholder="Level (optional)" />
+                      {tournament.level_names?.length > 0 ? (
+                        <select className="solid-input" value={teamLevel} onChange={(e) => setTeamLevel(e.target.value)}>
+                          <option value="">Level (optional)</option>
+                          {tournament.level_names.map((lvl) => <option key={lvl} value={lvl}>{lvl}</option>)}
+                        </select>
+                      ) : (
+                        <input className="solid-input" value={teamLevel} onChange={(e) => setTeamLevel(e.target.value)} placeholder="Level (optional)" />
+                      )}
                     </div>
                     {tournament.num_pools > 1 && (
                       <>
@@ -1288,7 +1428,14 @@ export default function Tournament({ session }) {
                         <option value="doubles">Doubles only</option>
                       </select>
                     </div>
-                    <input className="solid-input" style={{ marginTop: 10 }} value={courtLevel} onChange={(e) => setCourtLevel(e.target.value)} placeholder="Level restriction (optional)" />
+                    {tournament.level_names?.length > 0 ? (
+                      <select className="solid-input" style={{ marginTop: 10 }} value={courtLevel} onChange={(e) => setCourtLevel(e.target.value)}>
+                        <option value="">No level restriction</option>
+                        {tournament.level_names.map((lvl) => <option key={lvl} value={lvl}>{lvl}</option>)}
+                      </select>
+                    ) : (
+                      <input className="solid-input" style={{ marginTop: 10 }} value={courtLevel} onChange={(e) => setCourtLevel(e.target.value)} placeholder="Level restriction (optional)" />
+                    )}
                     <button className="btn btn-primary btn-block" style={{ marginTop: 10 }} type="submit">
                       <Plus size={14} style={{ verticalAlign: -2 }} /> Add court
                     </button>
@@ -1315,6 +1462,16 @@ export default function Tournament({ session }) {
 
             {tab === "matches" && (tournament.fixed_partners === false || tournament.status !== "setup") && (
               <div className="body-scroll">
+                {matches.length > 0 && (
+                  <div style={{ padding: "14px 20px 0" }}>
+                    <button
+                      onClick={downloadSchedulePDF}
+                      style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid var(--line)`, borderRadius: 10, padding: "8px 12px", fontSize: 12, fontWeight: 700, color: "var(--ink)", cursor: "pointer" }}
+                    >
+                      <Download size={13} /> Download schedule (PDF)
+                    </button>
+                  </div>
+                )}
                 {(tournament.num_pools > 1 ? [...new Set(matches.filter((m) => m.stage === "group").map((m) => m.pool_number))].sort((a, b) => a - b) : [1]).map((poolNum) => {
                   const poolMatches = tournament.num_pools > 1
                     ? matches.filter((m) => m.stage === "group" && m.pool_number === poolNum)
