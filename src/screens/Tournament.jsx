@@ -189,7 +189,7 @@ export default function Tournament({ session }) {
         match_type: matchType,
         scoring_mode: scoringMode,
         default_match_minutes: Number(defaultMinutes) || 15,
-        num_pools: format === "round_robin" && fixedPartners ? Math.max(1, Number(numPools) || 1) : 1,
+        num_pools: format === "round_robin" ? Math.max(1, Number(numPools) || 1) : 1,
         timer_enabled: timerEnabled,
         advance_count: format === "round_robin" && fixedPartners ? Number(advanceCount) || 0 : 0,
         fixed_partners: format === "round_robin" ? fixedPartners : true,
@@ -225,7 +225,7 @@ export default function Tournament({ session }) {
       updates.format = format;
       updates.match_type = matchType;
       updates.scoring_mode = scoringMode;
-      updates.num_pools = format === "round_robin" && fixedPartners ? Math.max(1, Number(numPools) || 1) : 1;
+      updates.num_pools = format === "round_robin" ? Math.max(1, Number(numPools) || 1) : 1;
       updates.fixed_partners = format === "round_robin" ? fixedPartners : true;
     }
     if (tournament.format === "round_robin" && (tournament.fixed_partners !== false)) {
@@ -283,6 +283,32 @@ export default function Tournament({ session }) {
 
   async function removeTeam(id) {
     await supabase.from("tournament_teams").delete().eq("id", id);
+    await loadAll();
+  }
+
+  // Distributes all current teams evenly across the tournament's pools,
+  // instead of the host picking a pool for every team one at a time.
+  // Shuffles first so pool assignment isn't just "whoever signed up
+  // first/together" clustered into the same pool.
+  async function autoAssignPools() {
+    if (teams.length === 0) return;
+    const poolCount = Math.max(1, tournament.num_pools || 1);
+    if (poolCount < 2) return;
+    const shuffled = [...teams].sort(() => Math.random() - 0.5);
+    for (let i = 0; i < shuffled.length; i++) {
+      await supabase.from("tournament_teams").update({ pool_number: (i % poolCount) + 1 }).eq("id", shuffled[i].id);
+    }
+    await loadAll();
+  }
+
+  // Randomizes bracket seed order. Doesn't touch anything if matches
+  // have already been generated with the old order.
+  async function randomizeSeeding() {
+    if (teams.length === 0) return;
+    const shuffled = [...teams].sort(() => Math.random() - 0.5);
+    for (let i = 0; i < shuffled.length; i++) {
+      await supabase.from("tournament_teams").update({ seed: i + 1 }).eq("id", shuffled[i].id);
+    }
     await loadAll();
   }
 
@@ -428,7 +454,8 @@ export default function Tournament({ session }) {
         skeleton.push(...poolMatches);
       }
     } else {
-      skeleton = buildBracketSkeleton(teams.map((t) => t.id)).map((m) => ({ ...m, pool: 1 }));
+      const seededTeams = [...teams].sort((a, b) => (a.seed ?? Infinity) - (b.seed ?? Infinity));
+      skeleton = buildBracketSkeleton(seededTeams.map((t) => t.id)).map((m) => ({ ...m, pool: 1 }));
     }
 
     const rows = skeleton.map((m) => ({
@@ -469,6 +496,7 @@ export default function Tournament({ session }) {
   // fresh from the actual matches every time rather than carried in
   // any separate state.
   async function generateOpenPlayRounds(numRounds) {
+    const poolCount = Math.max(1, tournament.num_pools || 1);
     const activePlayers = players.filter((p) => p.active);
     const perMatch = tournament.match_type === "doubles" ? 4 : 2;
     if (activePlayers.length < perMatch) return;
@@ -488,74 +516,86 @@ export default function Tournament({ session }) {
     const capacity = courts.length > 0 ? courts.length * perMatch : activePlayers.length;
 
     for (let i = 0; i < numRounds; i++) {
-      const history = buildOpenPlayHistory(workingMatches, workingTeamsById);
-
-      // Whoever has played the fewest games so far gets priority for this
-      // round's limited slots — the same rule that lets a latecomer catch up.
-      const ranked = [...activePlayers].sort(
-        (a, b) => (history.gamesPlayed[a.id] || 0) - (history.gamesPlayed[b.id] || 0)
-      );
-      const activeCount = Math.floor(Math.min(ranked.length, capacity) / perMatch) * perMatch;
-      const roundPool = selectRoundPool(ranked, activeCount, !!tournament.require_mixed_doubles, tournament.match_type);
-
-      if (roundPool.length < perMatch) break; // not enough players (or courts) for even one match
-
-      const { matches: roundMatches } = generateOpenPlayRound({
-        players: roundPool,
-        matchType: tournament.match_type,
-        gamesPlayed: history.gamesPlayed,
-        pastPartners: history.pastPartners,
-        pastOpponents: history.pastOpponents,
-        genderById: Object.fromEntries(players.map((p) => [p.id, p.gender])),
-        requireMixedForWomen: !!tournament.require_mixed_doubles,
-      });
-      if (roundMatches.length === 0) break; // not enough players to form even one match
-
       const roundNumber = maxExistingRound + i + 1;
-      const teamRows = [];
-      roundMatches.forEach((rm) => {
-        for (const side of [rm.team1, rm.team2]) {
-          const p1 = playersById[side[0]];
-          const p2 = side[1] ? playersById[side[1]] : null;
-          const derivedGender = !p2
-            ? p1?.gender || null
-            : p1?.gender && p2?.gender
-            ? (p1.gender === p2.gender ? p1.gender : "mixed")
-            : null;
-          const derivedLevel = !p2 ? p1?.level || null : p1?.level && p1.level === p2?.level ? p1.level : null;
-          teamRows.push({
-            tournament_id: tournament.id,
-            name: side.map((pid) => playersById[pid]?.name || "?").join(" / "),
-            player1_name: p1?.name || "?",
-            player2_name: p2 ? p2.name : null,
-            player1_id: side[0],
-            player2_id: side[1] || null,
-            gender: derivedGender,
-            level: derivedLevel,
-          });
-        }
-      });
+      const history = buildOpenPlayHistory(workingMatches, workingTeamsById);
+      let anyMatchThisRound = false;
 
-      const { data: insertedTeams } = await supabase.from("tournament_teams").insert(teamRows).select();
-      if (!insertedTeams) break;
+      // With multiple pools, each pool runs its own independent rotation
+      // but shares the same round number — they're happening at the same
+      // real-world time slot, so they also correctly compete for the same
+      // pool of courts via assignCourts below.
+      for (let poolNum = 1; poolNum <= poolCount; poolNum++) {
+        const poolPlayers = poolCount > 1 ? activePlayers.filter((p) => p.pool_number === poolNum) : activePlayers;
+        if (poolPlayers.length < perMatch) continue;
 
-      const matchRows = roundMatches.map((rm, idx) => ({
-        tournament_id: tournament.id,
-        round_number: roundNumber,
-        match_index: idx,
-        pool_number: 1,
-        stage: "group",
-        team1_id: insertedTeams[idx * 2].id,
-        team2_id: insertedTeams[idx * 2 + 1].id,
-        status: "scheduled",
-        match_minutes: tournament.default_match_minutes,
-      }));
-      const { data: insertedMatches } = await supabase.from("tournament_matches").insert(matchRows).select();
+        const ranked = [...poolPlayers].sort(
+          (a, b) => (history.gamesPlayed[a.id] || 0) - (history.gamesPlayed[b.id] || 0)
+        );
+        const activeCount = Math.floor(Math.min(ranked.length, capacity) / perMatch) * perMatch;
+        const roundPool = selectRoundPool(ranked, activeCount, !!tournament.require_mixed_doubles, tournament.match_type);
+        if (roundPool.length < perMatch) continue;
 
-      // Fold this round into the working copies so the NEXT round in
-      // this same batch keeps rotating fairly instead of repeating it.
-      insertedTeams.forEach((t) => { workingTeamsById[t.id] = t; });
-      workingMatches = [...workingMatches, ...(insertedMatches || [])];
+        const { matches: roundMatches } = generateOpenPlayRound({
+          players: roundPool,
+          matchType: tournament.match_type,
+          gamesPlayed: history.gamesPlayed,
+          pastPartners: history.pastPartners,
+          pastOpponents: history.pastOpponents,
+          genderById: Object.fromEntries(players.map((p) => [p.id, p.gender])),
+          requireMixedForWomen: !!tournament.require_mixed_doubles,
+        });
+        if (roundMatches.length === 0) continue;
+        anyMatchThisRound = true;
+
+        const teamRows = [];
+        roundMatches.forEach((rm) => {
+          for (const side of [rm.team1, rm.team2]) {
+            const p1 = playersById[side[0]];
+            const p2 = side[1] ? playersById[side[1]] : null;
+            const derivedGender = !p2
+              ? p1?.gender || null
+              : p1?.gender && p2?.gender
+              ? (p1.gender === p2.gender ? p1.gender : "mixed")
+              : null;
+            const derivedLevel = !p2 ? p1?.level || null : p1?.level && p1.level === p2?.level ? p1.level : null;
+            teamRows.push({
+              tournament_id: tournament.id,
+              name: side.map((pid) => playersById[pid]?.name || "?").join(" / "),
+              player1_name: p1?.name || "?",
+              player2_name: p2 ? p2.name : null,
+              player1_id: side[0],
+              player2_id: side[1] || null,
+              gender: derivedGender,
+              level: derivedLevel,
+              pool_number: poolNum,
+            });
+          }
+        });
+
+        const { data: insertedTeams } = await supabase.from("tournament_teams").insert(teamRows).select();
+        if (!insertedTeams) continue;
+
+        const matchRows = roundMatches.map((rm, idx) => ({
+          tournament_id: tournament.id,
+          round_number: roundNumber,
+          match_index: idx,
+          pool_number: poolNum,
+          stage: "group",
+          team1_id: insertedTeams[idx * 2].id,
+          team2_id: insertedTeams[idx * 2 + 1].id,
+          status: "scheduled",
+          match_minutes: tournament.default_match_minutes,
+        }));
+        const { data: insertedMatches } = await supabase.from("tournament_matches").insert(matchRows).select();
+
+        // Fold this pool's round into the working copies so later pools
+        // this same round, and later rounds in this batch, keep rotating
+        // fairly instead of repeating anything.
+        insertedTeams.forEach((t) => { workingTeamsById[t.id] = t; });
+        workingMatches = [...workingMatches, ...(insertedMatches || [])];
+      }
+
+      if (!anyMatchThisRound) break; // no pool could field a match this round
     }
 
     if (tournament.status === "setup") {
@@ -1415,7 +1455,12 @@ export default function Tournament({ session }) {
                     <div>
                       <div className="name">{t.name}</div>
                       <div className="sub">
-                        {[tournament.num_pools > 1 ? `Pool ${t.pool_number}` : null, t.gender, t.level].filter(Boolean).join(" \u00B7 ") || "No gender/level set"}
+                        {[
+                          tournament.num_pools > 1 ? `Pool ${t.pool_number}` : null,
+                          tournament.format === "single_elim" && t.seed ? `Seed ${t.seed}` : null,
+                          t.gender,
+                          t.level,
+                        ].filter(Boolean).join(" \u00B7 ") || "No gender/level set"}
                       </div>
                     </div>
                     {isHost && (
@@ -1424,8 +1469,19 @@ export default function Tournament({ session }) {
                   </div>
                 ))}
 
+                {isHost && teams.length >= 2 && tournament.format === "round_robin" && tournament.num_pools > 1 && (
+                  <button className="btn btn-primary btn-block" style={{ marginTop: 16 }} onClick={autoAssignPools}>
+                    Auto-assign pools
+                  </button>
+                )}
+                {isHost && teams.length >= 2 && tournament.format === "single_elim" && (
+                  <button className="btn btn-primary btn-block" style={{ marginTop: 16 }} onClick={randomizeSeeding}>
+                    Randomize seeding
+                  </button>
+                )}
+
                 {isHost && teams.length >= 2 && (
-                  <button className="btn btn-accent btn-block" style={{ marginTop: 16 }} onClick={generateMatches} disabled={generating}>
+                  <button className="btn btn-accent btn-block" style={{ marginTop: 10 }} onClick={generateMatches} disabled={generating}>
                     {generating ? "Generating..." : `Generate ${tournament.format === "round_robin" ? "round robin" : "bracket"}`}
                   </button>
                 )}
