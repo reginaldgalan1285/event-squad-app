@@ -117,6 +117,7 @@ export default function Tournament({ session }) {
   const [courtGender, setCourtGender] = useState("any");
   const [courtLevel, setCourtLevel] = useState("");
   const [courtMatchType, setCourtMatchType] = useState("any");
+  const [editingCourtId, setEditingCourtId] = useState(null);
 
   const [scoreDrafts, setScoreDrafts] = useState({});
   const [editingMatchId, setEditingMatchId] = useState(null);
@@ -301,6 +302,31 @@ export default function Tournament({ session }) {
 
   async function removeCourt(id) {
     await supabase.from("tournament_courts").delete().eq("id", id);
+    await loadAll();
+  }
+
+  function beginEditCourt(c) {
+    setCourtLabel(c.label);
+    setCourtGender(c.gender_restriction);
+    setCourtMatchType(c.match_type);
+    setCourtLevel(c.level_restriction || "");
+    setEditingCourtId(c.id);
+  }
+
+  async function saveCourtEdit(e) {
+    e.preventDefault();
+    if (!courtLabel.trim()) return;
+    await supabase
+      .from("tournament_courts")
+      .update({
+        label: courtLabel.trim(),
+        gender_restriction: courtGender,
+        level_restriction: courtLevel.trim() || null,
+        match_type: courtMatchType,
+      })
+      .eq("id", editingCourtId);
+    setEditingCourtId(null);
+    setCourtLabel(""); setCourtGender("any"); setCourtLevel(""); setCourtMatchType("any");
     await loadAll();
   }
 
@@ -1412,8 +1438,8 @@ export default function Tournament({ session }) {
             {tab === "courts" && (tournament.fixed_partners === false || tournament.status === "setup") && (
               <div className="body-scroll">
                 {isHost && (
-                  <form onSubmit={addCourt} style={{ marginBottom: 16 }}>
-                    <div className="field-label">Court label</div>
+                  <form onSubmit={editingCourtId ? saveCourtEdit : addCourt} style={{ marginBottom: 16 }}>
+                    <div className="field-label">{editingCourtId ? "Edit court" : "Court label"}</div>
                     <input className="solid-input" value={courtLabel} onChange={(e) => setCourtLabel(e.target.value)} placeholder="Court 1" />
                     <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                       <select className="solid-input" value={courtGender} onChange={(e) => setCourtGender(e.target.value)}>
@@ -1436,9 +1462,19 @@ export default function Tournament({ session }) {
                     ) : (
                       <input className="solid-input" style={{ marginTop: 10 }} value={courtLevel} onChange={(e) => setCourtLevel(e.target.value)} placeholder="Level restriction (optional)" />
                     )}
-                    <button className="btn btn-primary btn-block" style={{ marginTop: 10 }} type="submit">
-                      <Plus size={14} style={{ verticalAlign: -2 }} /> Add court
-                    </button>
+                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                      {editingCourtId && (
+                        <button
+                          type="button" className="btn btn-outline-coral btn-small"
+                          onClick={() => { setEditingCourtId(null); setCourtLabel(""); setCourtGender("any"); setCourtLevel(""); setCourtMatchType("any"); }}
+                        >
+                          Cancel
+                        </button>
+                      )}
+                      <button className="btn btn-primary" style={{ flex: editingCourtId ? 2 : 1, borderRadius: 14 }} type="submit">
+                        {editingCourtId ? "Save changes" : (<><Plus size={14} style={{ verticalAlign: -2 }} /> Add court</>)}
+                      </button>
+                    </div>
                   </form>
                 )}
 
@@ -1452,7 +1488,10 @@ export default function Tournament({ session }) {
                       </div>
                     </div>
                     {isHost && (
-                      <button className="icon-btn" style={{ color: "var(--coral)" }} onClick={() => removeCourt(c.id)}><X size={15} /></button>
+                      <div style={{ display: "flex", gap: 10 }}>
+                        <button className="icon-btn" style={{ color: "var(--fade)" }} onClick={() => beginEditCourt(c)}><Pencil size={14} /></button>
+                        <button className="icon-btn" style={{ color: "var(--coral)" }} onClick={() => removeCourt(c.id)}><X size={15} /></button>
+                      </div>
                     )}
                   </div>
                 ))}

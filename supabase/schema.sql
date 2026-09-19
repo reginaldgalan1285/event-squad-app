@@ -689,3 +689,71 @@ create policy "tmatches_write_host" on tournament_matches for all
 create index idx_tmatches_tournament on tournament_matches(tournament_id);
 create index idx_tteams_tournament on tournament_teams(tournament_id);
 create index idx_tcourts_tournament on tournament_courts(tournament_id);
+
+-- ============================================================
+-- Pools (round robin split into multiple independent groups) and
+-- a toggle to disable the match countdown timer entirely.
+-- ============================================================
+alter table tournaments add column num_pools int not null default 1;
+alter table tournaments add column timer_enabled boolean not null default true;
+alter table tournament_teams add column pool_number int not null default 1;
+alter table tournament_matches add column pool_number int not null default 1;
+
+-- ============================================================
+-- Playoffs after round robin: top N finishers from each pool (or
+-- overall, if only one pool) advance into a single-elimination
+-- bracket. advance_count = 0 means no playoff stage. Matches now
+-- carry a stage so group-stage and playoff-stage matches can share
+-- the same table but be displayed/scheduled separately.
+-- ============================================================
+alter table tournaments add column advance_count int not null default 0;
+alter table tournament_matches add column stage text not null default 'group' check (stage in ('group', 'playoff'));
+
+-- ============================================================
+-- Open play / mixer mode: instead of pre-formed fixed teams,
+-- individual players get dynamically paired each round, with
+-- partners and opponents rotating round to round. Late arrivals
+-- can be added anytime and get prioritized in future rounds until
+-- their total games played catches up to everyone else's.
+-- ============================================================
+alter table tournaments add column fixed_partners boolean not null default true;
+
+create table tournament_players (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  name text not null,
+  gender text check (gender in ('men', 'women', 'mixed')),
+  level text,
+  active boolean not null default true,
+  joined_at timestamptz not null default now()
+);
+
+alter table tournament_players enable row level security;
+
+create policy "tplayers_select_public" on tournament_players for select using (true);
+create policy "tplayers_write_host" on tournament_players for all
+  using (exists (select 1 from tournaments t join events e on e.id = t.event_id where t.id = tournament_id and e.host_id = auth.uid()))
+  with check (exists (select 1 from tournaments t join events e on e.id = t.event_id where t.id = tournament_id and e.host_id = auth.uid()));
+
+-- Links an (ephemeral, open-play) team back to the two individual
+-- players in it, so games-played and standings can be tracked per
+-- PERSON even though they get a new "team" row every round.
+alter table tournament_teams add column player1_id uuid references tournament_players(id) on delete cascade;
+alter table tournament_teams add column player2_id uuid references tournament_players(id) on delete cascade;
+
+create index idx_tplayers_tournament on tournament_players(tournament_id);
+
+-- ============================================================
+-- Optional constraint for open-play doubles: whenever a woman is
+-- included in a pairing, she's partnered with a man rather than
+-- another woman, whenever the round's players make that possible.
+-- ============================================================
+alter table tournaments add column require_mixed_doubles boolean not null default false;
+
+-- ============================================================
+-- Named skill levels for a tournament (e.g. "Beginner", "2.5",
+-- "Open") instead of free-typing a level string everywhere it's used
+-- (teams, players, court restrictions). Empty array means the level
+-- fields stay free-text, for tournaments that never set this up.
+-- ============================================================
+alter table tournaments add column level_names text[] not null default '{}';
