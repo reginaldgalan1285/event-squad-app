@@ -33,6 +33,8 @@ export default function EventScreen({ session }) {
   const [guestEditDraft, setGuestEditDraft] = useState("");
   const [editingMapUrl, setEditingMapUrl] = useState(false);
   const [mapUrlDraft, setMapUrlDraft] = useState("");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
   const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState("");
   const [editingDateTime, setEditingDateTime] = useState(false);
@@ -59,6 +61,7 @@ export default function EventScreen({ session }) {
       setStartDraft(toDatetimeLocalValue(eventData.event_date));
       setEndDraft(toDatetimeLocalValue(eventData.end_time));
       setLocationDraft(eventData.location ?? "");
+      setTitleDraft(eventData.title ?? "");
     }
 
     const { data: memberData } = await supabase
@@ -189,6 +192,17 @@ export default function EventScreen({ session }) {
     await loadAll();
   }
 
+  async function saveTitle() {
+    const trimmed = titleDraft.trim();
+    if (!trimmed) {
+      setEditingTitle(false);
+      return;
+    }
+    await supabase.from("events").update({ title: trimmed }).eq("id", eventId);
+    setEditingTitle(false);
+    await loadAll();
+  }
+
   async function addGuestTo(memberId, e) {
     e.preventDefault();
     const trimmed = (guestInputs[memberId] || "").trim();
@@ -296,7 +310,26 @@ export default function EventScreen({ session }) {
           </div>
           {copied && <div style={{ textAlign: "center", fontSize: 10.5, color: "var(--citrus)", marginTop: 4 }}>Link copied</div>}
 
-          <div className="title-display" style={{ marginTop: 10, fontSize: 20 }}>{event.title}</div>
+          {editingTitle ? (
+            <input
+              className="solid-input"
+              autoFocus
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={saveTitle}
+              onKeyDown={(e) => e.key === "Enter" && saveTitle()}
+              style={{ marginTop: 10, fontSize: 18, fontFamily: "var(--font-display)" }}
+            />
+          ) : (
+            <div
+              className="title-display"
+              style={{ marginTop: 10, fontSize: 20, cursor: isHost ? "pointer" : "default" }}
+              onClick={() => isHost && setEditingTitle(true)}
+            >
+              {event.title}
+              {isHost && <span style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", marginLeft: 6, fontFamily: "var(--font-body)" }}>edit</span>}
+            </div>
+          )}
           <div style={{ marginTop: 6 }}>
             {isHost ? (
               <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
