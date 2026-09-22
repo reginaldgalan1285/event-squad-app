@@ -98,6 +98,7 @@ export default function Tournament({ session }) {
   const [generatingPlayoffs, setGeneratingPlayoffs] = useState(false);
   const [fixedPartners, setFixedPartners] = useState(true);
   const [requireMixedDoubles, setRequireMixedDoubles] = useState(false);
+  const [groupWomensDoubles, setGroupWomensDoubles] = useState(false);
   const [levelNames, setLevelNames] = useState([]);
   const [newLevelInput, setNewLevelInput] = useState("");
   const [players, setPlayers] = useState([]);
@@ -194,7 +195,8 @@ export default function Tournament({ session }) {
         timer_enabled: timerEnabled,
         advance_count: format === "round_robin" && fixedPartners ? Number(advanceCount) || 0 : 0,
         fixed_partners: format === "round_robin" ? fixedPartners : true,
-        require_mixed_doubles: format === "round_robin" && !fixedPartners && matchType === "doubles" ? requireMixedDoubles : false,
+        require_mixed_doubles: format === "round_robin" && !fixedPartners && matchType === "doubles" ? requireMixedDoubles && !groupWomensDoubles : false,
+        group_womens_doubles: format === "round_robin" && !fixedPartners && matchType === "doubles" ? groupWomensDoubles : false,
         level_names: levelNames,
       })
       .select()
@@ -209,6 +211,7 @@ export default function Tournament({ session }) {
       setScoringMode("score"); setDefaultMinutes(15); setNumPools(1); setTimerEnabled(true); setAdvanceCount(0);
       setFixedPartners(true);
       setRequireMixedDoubles(false);
+      setGroupWomensDoubles(false);
       setLevelNames([]);
       await loadAll();
       openTournament(data.id);
@@ -233,7 +236,8 @@ export default function Tournament({ session }) {
       updates.advance_count = Number(advanceCount) || 0;
     }
     if (tournament.fixed_partners === false && tournament.match_type === "doubles") {
-      updates.require_mixed_doubles = requireMixedDoubles;
+      updates.require_mixed_doubles = requireMixedDoubles && !groupWomensDoubles;
+      updates.group_womens_doubles = groupWomensDoubles;
     }
     updates.level_names = levelNames;
     await supabase.from("tournaments").update(updates).eq("id", tournament.id);
@@ -260,6 +264,7 @@ export default function Tournament({ session }) {
     setAdvanceCount(tournament.advance_count || 0);
     setFixedPartners(tournament.fixed_partners !== false);
     setRequireMixedDoubles(!!tournament.require_mixed_doubles);
+    setGroupWomensDoubles(!!tournament.group_womens_doubles);
     setLevelNames(tournament.level_names || []);
     setEditingSettings(true);
   }
@@ -548,7 +553,8 @@ export default function Tournament({ session }) {
           (a, b) => (history.gamesPlayed[a.id] || 0) - (history.gamesPlayed[b.id] || 0)
         );
         const activeCount = Math.floor(Math.min(ranked.length, capacity) / perMatch) * perMatch;
-        const roundPool = selectRoundPool(ranked, activeCount, !!tournament.require_mixed_doubles, tournament.match_type);
+        const genderMode = tournament.require_mixed_doubles ? "mixed" : tournament.group_womens_doubles ? "grouped" : "none";
+        const roundPool = selectRoundPool(ranked, activeCount, genderMode, tournament.match_type);
         if (roundPool.length < perMatch) continue;
 
         const { matches: roundMatches } = generateOpenPlayRound({
@@ -559,6 +565,7 @@ export default function Tournament({ session }) {
           pastOpponents: history.pastOpponents,
           genderById: Object.fromEntries(players.map((p) => [p.id, p.gender])),
           requireMixedForWomen: !!tournament.require_mixed_doubles,
+          groupWomensDoubles: !!tournament.group_womens_doubles,
         });
         if (roundMatches.length === 0) continue;
         anyMatchThisRound = true;
@@ -1146,10 +1153,22 @@ export default function Tournament({ session }) {
                     </div>
 
                     {!fixedPartners && matchType === "doubles" && (
-                      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                        <input type="checkbox" checked={requireMixedDoubles} onChange={(e) => setRequireMixedDoubles(e.target.checked)} />
-                        Ensure mixed doubles whenever a woman is included
-                      </label>
+                      <>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                          <input
+                            type="checkbox" checked={requireMixedDoubles}
+                            onChange={(e) => { setRequireMixedDoubles(e.target.checked); if (e.target.checked) setGroupWomensDoubles(false); }}
+                          />
+                          Ensure mixed doubles whenever a woman is included
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                          <input
+                            type="checkbox" checked={groupWomensDoubles}
+                            onChange={(e) => { setGroupWomensDoubles(e.target.checked); if (e.target.checked) setRequireMixedDoubles(false); }}
+                          />
+                          Group women's doubles — match women's pairs against each other
+                        </label>
+                      </>
                     )}
 
                     <div className="field-label" style={{ marginTop: 14 }}>Pools</div>
@@ -1243,10 +1262,22 @@ export default function Tournament({ session }) {
                   </label>
 
                   {!fixedPartners && matchType === "doubles" && (
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                      <input type="checkbox" checked={requireMixedDoubles} onChange={(e) => setRequireMixedDoubles(e.target.checked)} />
-                      Ensure mixed doubles whenever a woman is included
-                    </label>
+                    <>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                        <input
+                          type="checkbox" checked={requireMixedDoubles}
+                          onChange={(e) => { setRequireMixedDoubles(e.target.checked); if (e.target.checked) setGroupWomensDoubles(false); }}
+                        />
+                        Ensure mixed doubles whenever a woman is included
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                        <input
+                          type="checkbox" checked={groupWomensDoubles}
+                          onChange={(e) => { setGroupWomensDoubles(e.target.checked); if (e.target.checked) setRequireMixedDoubles(false); }}
+                        />
+                        Group women's doubles — match women's pairs against each other
+                      </label>
+                    </>
                   )}
 
                   <div className="field-label" style={{ marginTop: 14 }}>Pools</div>

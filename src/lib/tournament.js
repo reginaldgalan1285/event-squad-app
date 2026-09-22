@@ -121,28 +121,41 @@ function teamPairKey(teamA, teamB) {
 // cannot form all-mixed pairs no matter how good the pairing step is.
 // This aims for an even men/women split first, then applies the
 // fewest-games priority within each gender.
-export function selectRoundPool(rankedPlayers, activeCount, requireMixedDoubles, matchType) {
-  if (!requireMixedDoubles || matchType !== "doubles") {
+export function selectRoundPool(rankedPlayers, activeCount, genderMode, matchType) {
+  if (genderMode !== "mixed" || matchType !== "doubles") {
+    // "none" and "grouped" both use ordinary fair rotation here — grouped
+    // women's doubles only needs to bias who PARTNERS with whom once
+    // players are selected, not who gets selected in the first place.
+    // Forcing extra women into every round to maximize women's-team
+    // formation would bench men whenever women alone could fill a round,
+    // breaking the fairness guarantee the whole rotation depends on.
     return rankedPlayers.slice(0, activeCount).map((p) => p.id);
   }
   const women = rankedPlayers.filter((p) => p.gender === "women");
   const nonWomen = rankedPlayers.filter((p) => p.gender !== "women");
+  // Every woman needs a male partner in mixed mode, so cap by men count too.
   const targetWomen = Math.min(Math.floor(activeCount / 2), women.length, nonWomen.length);
   const targetOthers = activeCount - targetWomen;
   return [...women.slice(0, targetWomen), ...nonWomen.slice(0, targetOthers)].map((p) => p.id);
 }
 
-export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPartners, pastOpponents, genderById = {}, requireMixedForWomen = false }) {
+export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPartners, pastOpponents, genderById = {}, requireMixedForWomen = false, groupWomensDoubles = false }) {
   const sorted = [...players].sort((a, b) => (gamesPlayed[a] || 0) - (gamesPlayed[b] || 0));
+  const isWoman = (p) => genderById[p] === "women";
+  const isWomensTeam = (team) => team.length > 0 && team.every(isWoman);
 
-  // When enabled, a woman's partner pool excludes other women — unless
-  // no non-woman candidate is actually available this round, in which
-  // case it falls back to whoever's left rather than forcing her to
-  // sit out entirely.
+  // Two mutually-exclusive preferences for a woman's partner: forced
+  // mixed (never another woman, unless truly no man is left this round),
+  // or the opposite — grouped women's doubles (prefer another woman,
+  // falling back to a man only if no woman partner is available).
   function partnerPool(p, candidates) {
-    if (requireMixedForWomen && genderById[p] === "women") {
-      const nonWomen = candidates.filter((o) => genderById[o] !== "women");
+    if (requireMixedForWomen && isWoman(p)) {
+      const nonWomen = candidates.filter((o) => !isWoman(o));
       if (nonWomen.length > 0) return nonWomen;
+    }
+    if (groupWomensDoubles && isWoman(p)) {
+      const women = candidates.filter(isWoman);
+      if (women.length > 0) return women;
     }
     return candidates;
   }
@@ -167,10 +180,13 @@ export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPar
   // pairing off with each other — otherwise men can greedily exhaust each
   // other as partners first (if they happen to have fewer games played),
   // leaving no man available for a woman even though plenty existed overall.
+  // The same reordering also serves grouped women's doubles: women need to
+  // be processed before other women get snapped up as mixed partners by
+  // someone else's fallback.
   let partneringOrder = sorted;
-  if (requireMixedForWomen) {
-    const women = sorted.filter((p) => genderById[p] === "women");
-    const rest = sorted.filter((p) => genderById[p] !== "women");
+  if (requireMixedForWomen || groupWomensDoubles) {
+    const women = sorted.filter(isWoman);
+    const rest = sorted.filter((p) => !isWoman(p));
     partneringOrder = [...women, ...rest];
   }
   const usedForPartner = new Set();
@@ -195,12 +211,24 @@ export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPar
     const keyA = teamA.join(",");
     if (usedForMatch.has(keyA)) continue;
     let bestJ = -1;
+    let bestIsWomensMatch = false;
     for (let j = i + 1; j < partnerships.length; j++) {
       const teamB = partnerships[j];
       const keyB = teamB.join(",");
       if (usedForMatch.has(keyB)) continue;
-      if (bestJ === -1) bestJ = j;
-      if (!pastOpponents.has(teamPairKey(teamA, teamB))) { bestJ = j; break; }
+      const noRepeat = !pastOpponents.has(teamPairKey(teamA, teamB));
+      // When grouping women's doubles, a women's team facing another
+      // women's team is the priority — even over avoiding a repeat
+      // opponent — since the whole point is keeping women's matches
+      // separate from mixed/men's matches.
+      const isWomensMatch = groupWomensDoubles && isWomensTeam(teamA) && isWomensTeam(teamB);
+      if (bestJ === -1) { bestJ = j; bestIsWomensMatch = isWomensMatch; continue; }
+      if (groupWomensDoubles && isWomensTeam(teamA)) {
+        if (isWomensMatch && !bestIsWomensMatch) { bestJ = j; bestIsWomensMatch = true; continue; }
+        if (isWomensMatch === bestIsWomensMatch && noRepeat) { bestJ = j; break; }
+        continue;
+      }
+      if (noRepeat) { bestJ = j; break; }
     }
     if (bestJ !== -1) {
       usedForMatch.add(keyA);
