@@ -1694,7 +1694,7 @@ export default function Tournament({ session }) {
                           <div className="round-header">
                             {tournament.format === "round_robin" ? `ROUND ${r}` : r === Math.max(...poolRounds) ? "FINAL" : `ROUND ${r}`}
                           </div>
-                          {poolMatches.filter((m) => m.round_number === r).map(renderMatchCard)}
+                          {poolMatches.filter((m) => m.round_number === r).map((m) => renderMatchCard(m))}
                         </div>
                       ))}
                     </div>
@@ -1731,7 +1731,7 @@ export default function Tournament({ session }) {
                         {playoffRounds.map((r) => (
                           <div key={r}>
                             <div className="round-header">{roundLabel(r, totalPlayoffRounds)}</div>
-                            {playoffMatches.filter((m) => m.round_number === r).map(renderMatchCard)}
+                            {playoffMatches.filter((m) => m.round_number === r).map((m) => renderMatchCard(m))}
                           </div>
                         ))}
                       </div>
