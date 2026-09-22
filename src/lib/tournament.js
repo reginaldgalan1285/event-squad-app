@@ -163,11 +163,21 @@ export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPar
   }
 
   // Doubles: form partnerships first, then match partnerships against each other.
+  // When mixed doubles is required, women must be matched BEFORE men start
+  // pairing off with each other — otherwise men can greedily exhaust each
+  // other as partners first (if they happen to have fewer games played),
+  // leaving no man available for a woman even though plenty existed overall.
+  let partneringOrder = sorted;
+  if (requireMixedForWomen) {
+    const women = sorted.filter((p) => genderById[p] === "women");
+    const rest = sorted.filter((p) => genderById[p] !== "women");
+    partneringOrder = [...women, ...rest];
+  }
   const usedForPartner = new Set();
   const partnerships = [];
-  for (const p of sorted) {
+  for (const p of partneringOrder) {
     if (usedForPartner.has(p)) continue;
-    const candidates = sorted.filter((o) => o !== p && !usedForPartner.has(o));
+    const candidates = partneringOrder.filter((o) => o !== p && !usedForPartner.has(o));
     const pool = partnerPool(p, candidates);
     let partner = pool.find((o) => !pastPartners.has(pairKey(p, o)));
     if (!partner) partner = pool[0];

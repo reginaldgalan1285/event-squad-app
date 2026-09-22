@@ -238,6 +238,12 @@ export default function EventScreen({ session }) {
     await loadAll();
   }
 
+  async function removeParticipant(memberId, memberName) {
+    if (!window.confirm(`Remove ${memberName} from this event? This also removes any guests they added. This can't be undone.`)) return;
+    await supabase.from("event_members").delete().eq("id", memberId);
+    await loadAll();
+  }
+
   async function withdrawRequest(requestId) {
     if (!window.confirm("Withdraw your request to join? This cancels your spot and any guests you added.")) return;
     await supabase.from("payment_requests").delete().eq("id", requestId);
@@ -698,6 +704,16 @@ export default function EventScreen({ session }) {
                         </div>
                       )}
                     </>
+                  )}
+
+                  {isHost && !memberIsHost && (
+                    <button
+                      className="btn btn-outline-coral btn-small"
+                      style={{ width: "100%", marginTop: 8 }}
+                      onClick={() => removeParticipant(member.id, member.name)}
+                    >
+                      Remove from event
+                    </button>
                   )}
                 </div>
               );
