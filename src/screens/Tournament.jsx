@@ -841,12 +841,13 @@ export default function Tournament({ session }) {
     doc.text(`${tournament.format === "round_robin" ? "Round robin" : "Bracket"} \u00B7 ${tournament.match_type}`, 14, y);
     y += 8;
 
-    function printMatchLine(m) {
+    function printMatchLine(m, matchNumber) {
       ensureRoom();
       const t1 = m.team1_id ? teamsById[m.team1_id]?.name : "TBD";
       const t2 = m.status === "bye" ? "BYE" : m.team2_id ? teamsById[m.team2_id]?.name : "TBD";
       const court = m.court_id ? courtsById[m.court_id]?.label : "No court";
-      let line = `${t1}  vs  ${t2}   (${court})`;
+      const prefix = matchNumber != null ? `Match ${matchNumber}:  ` : "";
+      let line = `${prefix}${t1}  vs  ${t2}   (${court})`;
       if (m.status === "completed") {
         line += m.is_tie ? "  \u2013 Tied" : tournament.scoring_mode === "score" ? `  \u2013 ${m.team1_score}-${m.team2_score}` : "  \u2013 Final";
       }
@@ -864,19 +865,28 @@ export default function Tournament({ session }) {
         doc.text(label, 14, y);
         y += 7;
       }
+
+      if (tournament.fixed_partners === false) {
+        // Open play: no "Round" headers — just every match, in order,
+        // numbered sequentially, matching the on-screen Matches tab.
+        const sorted = [...roundMatches].sort((a, b) => a.round_number - b.round_number || a.match_index - b.match_index);
+        doc.setFont(undefined, "normal");
+        sorted.forEach((m, idx) => printMatchLine(m, idx + 1));
+        y += 2;
+        return;
+      }
+
       const rounds = [...new Set(roundMatches.map((m) => m.round_number))].sort((a, b) => a - b);
       const total = Math.max(...rounds);
       for (const r of rounds) {
         ensureRoom(2);
         doc.setFontSize(11);
         doc.setFont(undefined, "bold");
-        const heading = tournament.fixed_partners === false || tournament.format === "round_robin"
-          ? `Round ${r}`
-          : roundLabel(r, total);
+        const heading = tournament.format === "round_robin" ? `Round ${r}` : roundLabel(r, total);
         doc.text(heading, 14, y);
         y += 6;
         doc.setFont(undefined, "normal");
-        roundMatches.filter((m) => m.round_number === r).forEach(printMatchLine);
+        roundMatches.filter((m) => m.round_number === r).forEach((m) => printMatchLine(m));
         y += 2;
       }
     }
@@ -895,7 +905,7 @@ export default function Tournament({ session }) {
     doc.save(`${tournament.name.replace(/[^a-z0-9]+/gi, "_")}_schedule.pdf`);
   }
 
-  function renderMatchCard(m) {
+  function renderMatchCard(m, matchNumber) {
     const t1 = m.team1_id ? teamsById[m.team1_id] : null;
     const t2 = m.team2_id ? teamsById[m.team2_id] : null;
     const court = m.court_id ? courtsById[m.court_id] : null;
@@ -967,6 +977,11 @@ export default function Tournament({ session }) {
 
     return (
       <div key={m.id} className="tmatch-card">
+        {matchNumber != null && (
+          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--fade)", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 6 }}>
+            Match {matchNumber}
+          </div>
+        )}
         <div className="tmatch-teams">
           {renderTeamSide(t1, m.team1_id, "team1", "left")}
           <div className="tmatch-vs">vs</div>
@@ -1652,6 +1667,23 @@ export default function Tournament({ session }) {
                     ? matches.filter((m) => m.stage === "group" && m.pool_number === poolNum)
                     : matches.filter((m) => m.stage === "group");
                   const poolRounds = [...new Set(poolMatches.map((m) => m.round_number))].sort((a, b) => a - b);
+
+                  if (tournament.fixed_partners === false) {
+                    // Open play: no "Round" grouping headers — just every
+                    // match, in order, numbered sequentially.
+                    const sortedMatches = [...poolMatches].sort(
+                      (a, b) => a.round_number - b.round_number || a.match_index - b.match_index
+                    );
+                    return (
+                      <div key={poolNum}>
+                        {tournament.num_pools > 1 && (
+                          <div className="round-header" style={{ fontSize: 14, color: "var(--ink)", paddingTop: 18 }}>POOL {poolNum}</div>
+                        )}
+                        {sortedMatches.map((m, idx) => renderMatchCard(m, idx + 1))}
+                      </div>
+                    );
+                  }
+
                   return (
                     <div key={poolNum}>
                       {tournament.num_pools > 1 && (
