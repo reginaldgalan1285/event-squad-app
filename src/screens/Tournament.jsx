@@ -638,11 +638,10 @@ export default function Tournament({ session }) {
       return;
     }
     if (roundsToRemove.some((m) => m.status !== "scheduled")) {
-      alert("Some of those matches have already started or been completed — undo is only available before any of the newly generated rounds have been played.");
+      alert("Some of those matches have already started or been completed — undo is only available before any of the newly generated matches have been played.");
       return;
     }
-    const roundCount = new Set(roundsToRemove.map((m) => m.round_number)).size;
-    if (!window.confirm(`Remove the ${roundCount} round${roundCount !== 1 ? "s" : ""} just generated? This can't be undone.`)) return;
+    if (!window.confirm(`Remove the ${roundsToRemove.length} match${roundsToRemove.length !== 1 ? "es" : ""} just generated? This can't be undone.`)) return;
 
     const teamIdsToRemove = new Set();
     roundsToRemove.forEach((m) => {
@@ -1140,10 +1139,10 @@ export default function Tournament({ session }) {
                   <>
                     <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                       <input type="checkbox" checked={!fixedPartners} onChange={(e) => setFixedPartners(!e.target.checked)} />
-                      Open play — rotate partners/opponents each round
+                      Open play — rotate partners/opponents each match
                     </label>
                     <div className="helper-text">
-                      No fixed teams. Add individual players; every round pairs people up fresh so everyone gets a chance to partner with — and play against — everyone else.
+                      No fixed teams. Add individual players; every match pairs people up fresh so everyone gets a chance to partner with — and play against — everyone else.
                     </div>
 
                     {!fixedPartners && matchType === "doubles" && (
@@ -1240,7 +1239,7 @@ export default function Tournament({ session }) {
                       type="checkbox" checked={!fixedPartners} disabled={tournament.status !== "setup"}
                       onChange={(e) => setFixedPartners(!e.target.checked)}
                     />
-                    Open play — rotate partners/opponents each round
+                    Open play — rotate partners/opponents each match
                   </label>
 
                   {!fixedPartners && matchType === "doubles" && (
@@ -1356,7 +1355,7 @@ export default function Tournament({ session }) {
                       <Plus size={14} style={{ verticalAlign: -2 }} /> Add player
                     </button>
                     <div className="helper-text">
-                      Add players anytime, even mid-session — a latecomer gets automatically prioritized in future rounds until their game count catches up.
+                      Add players anytime, even mid-session — a latecomer gets automatically prioritized in future matches until their game count catches up.
                     </div>
                   </form>
                 )}
@@ -1396,7 +1395,7 @@ export default function Tournament({ session }) {
                 {isHost && (
                   <div className="card" style={{ marginTop: 16 }}>
                     <div className="field-label" style={{ marginBottom: 8 }}>
-                      {matches.length > 0 ? "Generate more rounds" : "Generate rounds"}
+                      {matches.length > 0 ? "Generate more matches" : "Generate matches"}
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
                       <input
@@ -1414,13 +1413,13 @@ export default function Tournament({ session }) {
                     </div>
                     {players.filter((p) => p.active).length < (tournament.match_type === "doubles" ? 4 : 2) && (
                       <div className="helper-text">
-                        Need at least {tournament.match_type === "doubles" ? 4 : 2} active players to generate a round.
+                        Need at least {tournament.match_type === "doubles" ? 4 : 2} active players to generate a match.
                       </div>
                     )}
                     <div className="helper-text">
                       {courts.length > 0
-                        ? `Each round plays up to ${courts.length} match${courts.length !== 1 ? "es" : ""} at once, matching your ${courts.length} court${courts.length !== 1 ? "s" : ""} — set this on the Courts tab.`
-                        : "No courts added yet — every active player will be scheduled each round with no cap. Add courts on the Courts tab to limit how many matches run per round."}
+                        ? `Matches run up to ${courts.length} at once, matching your ${courts.length} court${courts.length !== 1 ? "s" : ""} — set this on the Courts tab.`
+                        : "No courts added yet — every active player will be scheduled every time you generate, with no cap. Add courts on the Courts tab to limit how many matches run at once."}
                     </div>
 
                     {lastGeneratedFromRound !== null && matches.some((m) => m.round_number > lastGeneratedFromRound) && (
