@@ -95,6 +95,7 @@ export default function Tournament({ session }) {
   const [numPools, setNumPools] = useState(1);
   const [timerEnabled, setTimerEnabled] = useState(true);
   const [advanceCount, setAdvanceCount] = useState(0);
+  const [thirdPlaceMatchOpt, setThirdPlaceMatchOpt] = useState(false);
   const [generatingPlayoffs, setGeneratingPlayoffs] = useState(false);
   const [fixedPartners, setFixedPartners] = useState(true);
   const [requireMixedDoubles, setRequireMixedDoubles] = useState(false);
@@ -198,6 +199,7 @@ export default function Tournament({ session }) {
         require_mixed_doubles: format === "round_robin" && !fixedPartners && matchType === "doubles" ? requireMixedDoubles && !groupWomensDoubles : false,
         group_womens_doubles: format === "round_robin" && !fixedPartners && matchType === "doubles" ? groupWomensDoubles : false,
         level_names: levelNames,
+        third_place_match: format === "single_elim" || (format === "round_robin" && fixedPartners && Number(advanceCount) >= 1) ? thirdPlaceMatchOpt : false,
       })
       .select()
       .single();
@@ -213,6 +215,7 @@ export default function Tournament({ session }) {
       setRequireMixedDoubles(false);
       setGroupWomensDoubles(false);
       setLevelNames([]);
+      setThirdPlaceMatchOpt(false);
       await loadAll();
       openTournament(data.id);
     }
@@ -231,9 +234,11 @@ export default function Tournament({ session }) {
       updates.scoring_mode = scoringMode;
       updates.num_pools = format === "round_robin" ? Math.max(1, Number(numPools) || 1) : 1;
       updates.fixed_partners = format === "round_robin" ? fixedPartners : true;
+      if (format === "single_elim") updates.third_place_match = thirdPlaceMatchOpt;
     }
     if (tournament.format === "round_robin" && (tournament.fixed_partners !== false)) {
       updates.advance_count = Number(advanceCount) || 0;
+      updates.third_place_match = thirdPlaceMatchOpt;
     }
     if (tournament.fixed_partners === false && tournament.match_type === "doubles") {
       updates.require_mixed_doubles = requireMixedDoubles && !groupWomensDoubles;
@@ -266,6 +271,7 @@ export default function Tournament({ session }) {
     setRequireMixedDoubles(!!tournament.require_mixed_doubles);
     setGroupWomensDoubles(!!tournament.group_womens_doubles);
     setLevelNames(tournament.level_names || []);
+    setThirdPlaceMatchOpt(!!tournament.third_place_match);
     setEditingSettings(true);
   }
 
@@ -460,6 +466,42 @@ export default function Tournament({ session }) {
     }
   }
 
+  // Creates the 3rd place match (the two semifinal losers play each
+  // other) and routes each semifinal's loser into it. Separate from
+  // linkBracketMatches because losers need their own routing —
+  // next_match_id/next_match_slot only ever carries the winner.
+  // Skipped when the bracket has no semifinal round (2 or fewer teams).
+  async function addThirdPlaceMatch(skeleton, byKey, stage) {
+    const maxRound = Math.max(...skeleton.map((m) => m.round));
+    if (maxRound < 2) return; // final round alone — no semifinal to draw losers from
+    const semiRound = maxRound - 1;
+    const semiSkeletonMatches = skeleton.filter((m) => m.round === semiRound);
+    if (semiSkeletonMatches.length !== 2) return; // standard single-elim always has exactly 2 here
+    const semiRows = semiSkeletonMatches.map((m) => byKey[`${m.round}-${m.matchIndex}`]).filter(Boolean);
+    if (semiRows.length !== 2) return;
+
+    const { data: thirdPlaceRow } = await supabase
+      .from("tournament_matches")
+      .insert({
+        tournament_id: tournament.id,
+        round_number: maxRound,
+        match_index: 1, // the final is always match_index 0 in its round
+        pool_number: 1,
+        stage,
+        is_third_place: true,
+        team1_id: null,
+        team2_id: null,
+        status: "scheduled",
+        match_minutes: tournament.default_match_minutes,
+      })
+      .select()
+      .single();
+    if (!thirdPlaceRow) return;
+
+    await supabase.from("tournament_matches").update({ loser_next_match_id: thirdPlaceRow.id, loser_next_slot: 1 }).eq("id", semiRows[0].id);
+    await supabase.from("tournament_matches").update({ loser_next_match_id: thirdPlaceRow.id, loser_next_slot: 2 }).eq("id", semiRows[1].id);
+  }
+
   async function generateMatches() {
     if (teams.length < 2) return;
     setGenerating(true);
@@ -500,6 +542,7 @@ export default function Tournament({ session }) {
 
     if (tournament.format === "single_elim") {
       await linkBracketMatches(skeleton, byKey);
+      if (tournament.third_place_match) await addThirdPlaceMatch(skeleton, byKey, "group");
     }
 
     await supabase.from("tournaments").update({ status: "in_progress" }).eq("id", tournament.id);
@@ -747,6 +790,7 @@ export default function Tournament({ session }) {
     const { data: insertedRows } = await supabase.from("tournament_matches").insert(rows).select();
     const byKey = Object.fromEntries((insertedRows || []).map((r) => [`${r.round_number}-${r.match_index}`, r]));
     await linkBracketMatches(skeleton, byKey);
+    if (tournament.third_place_match) await addThirdPlaceMatch(skeleton, byKey, "playoff");
 
     const { data: freshMatches } = await supabase.from("tournament_matches").select("*").eq("tournament_id", tournament.id);
     await assignCourts((freshMatches || []).filter((m) => m.stage === "playoff"), courts, teams);
@@ -800,6 +844,14 @@ export default function Tournament({ session }) {
     if (match.next_match_id && winner_team_id) {
       const field = match.next_match_slot === 1 ? "team1_id" : "team2_id";
       await supabase.from("tournament_matches").update({ [field]: winner_team_id }).eq("id", match.next_match_id);
+    }
+
+    if (match.loser_next_match_id && winner_team_id) {
+      const loserId = winner_team_id === match.team1_id ? match.team2_id : match.team1_id;
+      if (loserId) {
+        const field = match.loser_next_slot === 1 ? "team1_id" : "team2_id";
+        await supabase.from("tournament_matches").update({ [field]: loserId }).eq("id", match.loser_next_match_id);
+      }
     }
 
     setEditingMatchId(null);
@@ -977,7 +1029,11 @@ export default function Tournament({ session }) {
 
     return (
       <div key={m.id} className="tmatch-card">
-        {matchNumber != null && (
+        {m.is_third_place ? (
+          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--citrus)", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 6 }}>
+            3rd Place Match
+          </div>
+        ) : matchNumber != null && (
           <div style={{ fontSize: 10, fontWeight: 700, color: "var(--fade)", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 6 }}>
             Match {matchNumber}
           </div>
@@ -1085,13 +1141,14 @@ export default function Tournament({ session }) {
   const champion = (() => {
     if (playoffStageMatches.length > 0) {
       const finalRound = Math.max(...playoffStageMatches.map((m) => m.round_number));
-      return playoffStageMatches.find((m) => m.round_number === finalRound && m.status === "completed") || null;
+      return playoffStageMatches.find((m) => m.round_number === finalRound && !m.is_third_place && m.status === "completed") || null;
     }
     if (tournament?.format === "single_elim" && rounds.length > 0) {
-      return matches.find((m) => m.round_number === Math.max(...rounds) && m.status === "completed") || null;
+      return matches.find((m) => m.round_number === Math.max(...rounds) && !m.is_third_place && m.status === "completed") || null;
     }
     return null;
   })();
+  const thirdPlaceMatch = matches.find((m) => m.is_third_place) || null;
 
   return (
     <div className="app-shell">
@@ -1209,9 +1266,22 @@ export default function Tournament({ session }) {
                         <div className="helper-text">
                           After pool play finishes, the top finisher(s) from each pool play a single-elimination bracket for the title.
                         </div>
+                        {advanceCount >= 1 && (
+                          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                            <input type="checkbox" checked={thirdPlaceMatchOpt} onChange={(e) => setThirdPlaceMatchOpt(e.target.checked)} />
+                            Include a 3rd place match
+                          </label>
+                        )}
                       </>
                     )}
                   </>
+                )}
+
+                {format === "single_elim" && (
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                    <input type="checkbox" checked={thirdPlaceMatchOpt} onChange={(e) => setThirdPlaceMatchOpt(e.target.checked)} />
+                    Include a 3rd place match
+                  </label>
                 )}
 
                 <div className="field-label" style={{ marginTop: 14 }}>Match type</div>
@@ -1312,9 +1382,22 @@ export default function Tournament({ session }) {
                         <option value={4}>Top 4 per pool advance</option>
                         <option value={5}>Top 5 per pool advance</option>
                       </select>
+                      {advanceCount >= 1 && (
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                          <input type="checkbox" checked={thirdPlaceMatchOpt} onChange={(e) => setThirdPlaceMatchOpt(e.target.checked)} />
+                          Include a 3rd place match
+                        </label>
+                      )}
                     </>
                   )}
                 </>
+              )}
+
+              {format === "single_elim" && (
+                <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, fontSize: 13, fontWeight: 600, cursor: tournament.status === "setup" ? "pointer" : "default" }}>
+                  <input type="checkbox" checked={thirdPlaceMatchOpt} disabled={tournament.status !== "setup"} onChange={(e) => setThirdPlaceMatchOpt(e.target.checked)} />
+                  Include a 3rd place match
+                </label>
               )}
 
               <div className="field-label" style={{ marginTop: 14 }}>Match type</div>
@@ -1694,7 +1777,7 @@ export default function Tournament({ session }) {
                           <div className="round-header">
                             {tournament.format === "round_robin" ? `ROUND ${r}` : r === Math.max(...poolRounds) ? "FINAL" : `ROUND ${r}`}
                           </div>
-                          {poolMatches.filter((m) => m.round_number === r).map((m) => renderMatchCard(m))}
+                          {poolMatches.filter((m) => m.round_number === r).sort((a, b) => a.match_index - b.match_index).map((m) => renderMatchCard(m))}
                         </div>
                       ))}
                     </div>
@@ -1731,7 +1814,7 @@ export default function Tournament({ session }) {
                         {playoffRounds.map((r) => (
                           <div key={r}>
                             <div className="round-header">{roundLabel(r, totalPlayoffRounds)}</div>
-                            {playoffMatches.filter((m) => m.round_number === r).map((m) => renderMatchCard(m))}
+                            {playoffMatches.filter((m) => m.round_number === r).sort((a, b) => a.match_index - b.match_index).map((m) => renderMatchCard(m))}
                           </div>
                         ))}
                       </div>
