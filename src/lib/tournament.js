@@ -126,12 +126,24 @@ export function selectRoundPool(rankedPlayers, activeCount, genderMode, matchTyp
     return rankedPlayers.slice(0, activeCount).map((p) => p.id);
   }
   if (genderMode === "mixed") {
-    const women = rankedPlayers.filter((p) => p.gender === "women");
-    const nonWomen = rankedPlayers.filter((p) => p.gender !== "women");
-    // Every woman needs a male partner in mixed mode, so cap by men count too.
-    const targetWomen = Math.min(Math.floor(activeCount / 2), women.length, nonWomen.length);
-    const targetOthers = activeCount - targetWomen;
-    return [...women.slice(0, targetWomen), ...nonWomen.slice(0, targetOthers)].map((p) => p.id);
+    // Start from ordinary fair selection — do NOT always maximize how many
+    // women are included. With few women relative to men (e.g. 3 women,
+    // 10 men), always cramming in every available woman every round means
+    // she plays every single round while men merely rotate through the
+    // leftover slots — women end up playing far more total games than any
+    // individual man. Only adjust the fair selection if it's not actually
+    // feasible: every included woman needs an available male partner.
+    const initial = rankedPlayers.slice(0, activeCount);
+    const initialWomen = initial.filter((p) => p.gender === "women");
+    const totalNonWomen = rankedPlayers.filter((p) => p.gender !== "women").length;
+    const maxFeasibleWomen = Math.min(Math.floor(activeCount / 2), totalNonWomen);
+    if (initialWomen.length <= maxFeasibleWomen) return initial.map((p) => p.id);
+    const keptWomen = initialWomen.slice(0, maxFeasibleWomen);
+    const initialNonWomen = initial.filter((p) => p.gender !== "women");
+    const selectedIds = new Set(initial.map((p) => p.id));
+    const excess = initialWomen.length - maxFeasibleWomen;
+    const backfill = rankedPlayers.filter((p) => !selectedIds.has(p.id) && p.gender !== "women").slice(0, excess);
+    return [...keptWomen, ...initialNonWomen, ...backfill].slice(0, activeCount).map((p) => p.id);
   }
   // Grouped mode: start from ordinary fair selection, then round the
   // number of women in it down to a multiple of 4 — an EVEN number of
