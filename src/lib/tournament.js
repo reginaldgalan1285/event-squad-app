@@ -122,21 +122,38 @@ function teamPairKey(teamA, teamB) {
 // This aims for an even men/women split first, then applies the
 // fewest-games priority within each gender.
 export function selectRoundPool(rankedPlayers, activeCount, genderMode, matchType) {
-  if (genderMode !== "mixed" || matchType !== "doubles") {
-    // "none" and "grouped" both use ordinary fair rotation here — grouped
-    // women's doubles only needs to bias who PARTNERS with whom once
-    // players are selected, not who gets selected in the first place.
-    // Forcing extra women into every round to maximize women's-team
-    // formation would bench men whenever women alone could fill a round,
-    // breaking the fairness guarantee the whole rotation depends on.
+  if (matchType !== "doubles" || (genderMode !== "mixed" && genderMode !== "grouped")) {
     return rankedPlayers.slice(0, activeCount).map((p) => p.id);
   }
-  const women = rankedPlayers.filter((p) => p.gender === "women");
-  const nonWomen = rankedPlayers.filter((p) => p.gender !== "women");
-  // Every woman needs a male partner in mixed mode, so cap by men count too.
-  const targetWomen = Math.min(Math.floor(activeCount / 2), women.length, nonWomen.length);
-  const targetOthers = activeCount - targetWomen;
-  return [...women.slice(0, targetWomen), ...nonWomen.slice(0, targetOthers)].map((p) => p.id);
+  if (genderMode === "mixed") {
+    const women = rankedPlayers.filter((p) => p.gender === "women");
+    const nonWomen = rankedPlayers.filter((p) => p.gender !== "women");
+    // Every woman needs a male partner in mixed mode, so cap by men count too.
+    const targetWomen = Math.min(Math.floor(activeCount / 2), women.length, nonWomen.length);
+    const targetOthers = activeCount - targetWomen;
+    return [...women.slice(0, targetWomen), ...nonWomen.slice(0, targetOthers)].map((p) => p.id);
+  }
+  // Grouped mode: start from ordinary fair selection, then round the
+  // number of women in it down to a multiple of 4 — an EVEN number of
+  // women's TEAMS (not just an even number of women) — so they can
+  // always be paired fully against each other with zero crossover into
+  // a mixed match. The women bumped out are backfilled with the next
+  // fairest non-women; if there aren't enough non-women available to
+  // backfill, the round simply runs smaller rather than crossing anyone
+  // over. Bumped women get priority again next round since they'll have
+  // played fewer games — this is the direct cost of guaranteeing no
+  // cross-gender matches: a group smaller than 4 women sits out that
+  // round, and a roster with fewer than 4 women total never plays in
+  // this mode at all.
+  const initial = rankedPlayers.slice(0, activeCount);
+  const initialWomen = initial.filter((p) => p.gender === "women");
+  const excess = initialWomen.length % 4;
+  if (excess === 0) return initial.map((p) => p.id);
+  const keptWomen = initialWomen.slice(0, initialWomen.length - excess);
+  const nonWomenInInitial = initial.filter((p) => p.gender !== "women");
+  const selectedIds = new Set(initial.map((p) => p.id));
+  const backfill = rankedPlayers.filter((p) => !selectedIds.has(p.id) && p.gender !== "women").slice(0, excess);
+  return [...keptWomen, ...nonWomenInInitial, ...backfill].slice(0, activeCount).map((p) => p.id);
 }
 
 export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPartners, pastOpponents, genderById = {}, requireMixedForWomen = false, groupWomensDoubles = false }) {
