@@ -559,7 +559,7 @@ export default function Tournament({ session }) {
   // ones finish — all the same operation, since history is rebuilt
   // fresh from the actual matches every time rather than carried in
   // any separate state.
-  async function generateOpenPlayRounds(numRounds) {
+  async function generateOpenPlayRounds(numMatchesRequested) {
     const poolCount = Math.max(1, tournament.num_pools || 1);
     const activePlayers = players.filter((p) => p.active);
     const perMatch = tournament.match_type === "doubles" ? 4 : 2;
@@ -572,35 +572,44 @@ export default function Tournament({ session }) {
     let workingTeamsById = { ...Object.fromEntries(teams.map((t) => [t.id, t])) };
     const maxExistingRound = workingMatches.length > 0 ? Math.max(...workingMatches.map((m) => m.round_number)) : 0;
 
-    // A round is one time-slot — it should only hold as many matches as
-    // your actual courts can run at once, not one match for every group
-    // of 4 (or 2) players regardless of court count. With no courts
-    // defined yet, there's nothing to cap against, so every active
-    // player plays each round (the original behavior).
-    const capacity = courts.length > 0 ? courts.length * perMatch : activePlayers.length;
+    // The number entered is a total MATCH count, not a round count — 1
+    // means exactly 1 match gets created, however many courts exist.
+    // Courts only cap how many of those matches can run at the same
+    // time-slot (round); with no courts configured, there's no
+    // concurrency cap, so the whole request fits in a single round.
+    const maxConcurrent = courts.length > 0 ? courts.length : Infinity;
 
-    for (let i = 0; i < numRounds; i++) {
-      const roundNumber = maxExistingRound + i + 1;
+    let matchesRemaining = numMatchesRequested;
+    let roundOffset = 0;
+
+    while (matchesRemaining > 0) {
+      roundOffset += 1;
+      const roundNumber = maxExistingRound + roundOffset;
       const history = buildOpenPlayHistory(workingMatches, workingTeamsById);
-      let anyMatchThisRound = false;
+      let matchesThisRound = 0;
+      let slotsLeftThisRound = Math.min(maxConcurrent, matchesRemaining);
 
       // With multiple pools, each pool runs its own independent rotation
-      // but shares the same round number — they're happening at the same
-      // real-world time slot, so they also correctly compete for the same
-      // pool of courts via assignCourts below.
-      for (let poolNum = 1; poolNum <= poolCount; poolNum++) {
+      // but shares the same round number and the same remaining-slots
+      // budget for this time-slot — they're happening concurrently and
+      // correctly compete for the same courts via assignCourts below.
+      for (let poolNum = 1; poolNum <= poolCount && slotsLeftThisRound > 0; poolNum++) {
         const poolPlayers = poolCount > 1 ? activePlayers.filter((p) => p.pool_number === poolNum) : activePlayers;
         if (poolPlayers.length < perMatch) continue;
 
         const ranked = [...poolPlayers].sort(
           (a, b) => (history.gamesPlayed[a.id] || 0) - (history.gamesPlayed[b.id] || 0)
         );
-        const activeCount = Math.floor(Math.min(ranked.length, capacity) / perMatch) * perMatch;
+        const maxPoolMatches = Math.floor(ranked.length / perMatch);
+        const matchesForThisPool = Math.min(maxPoolMatches, slotsLeftThisRound);
+        if (matchesForThisPool <= 0) continue;
+
+        const activeCount = matchesForThisPool * perMatch;
         const genderMode = tournament.require_mixed_doubles ? "mixed" : tournament.group_womens_doubles ? "grouped" : "none";
         const roundPool = selectRoundPool(ranked, activeCount, genderMode, tournament.match_type);
         if (roundPool.length < perMatch) continue;
 
-        const { matches: roundMatches } = generateOpenPlayRound({
+        const { matches: rawMatches } = generateOpenPlayRound({
           players: roundPool,
           matchType: tournament.match_type,
           gamesPlayed: history.gamesPlayed,
@@ -610,8 +619,11 @@ export default function Tournament({ session }) {
           requireMixedForWomen: !!tournament.require_mixed_doubles,
           groupWomensDoubles: !!tournament.group_womens_doubles,
         });
+        // Safety cap — generateOpenPlayRound should already produce at
+        // most matchesForThisPool matches from a pool sized exactly for
+        // that, but never exceed what's actually still needed.
+        const roundMatches = rawMatches.slice(0, slotsLeftThisRound);
         if (roundMatches.length === 0) continue;
-        anyMatchThisRound = true;
 
         const teamRows = [];
         roundMatches.forEach((rm) => {
@@ -654,14 +666,18 @@ export default function Tournament({ session }) {
         }));
         const { data: insertedMatches } = await supabase.from("tournament_matches").insert(matchRows).select();
 
-        // Fold this pool's round into the working copies so later pools
+        // Fold this pool's matches into the working copies so later pools
         // this same round, and later rounds in this batch, keep rotating
         // fairly instead of repeating anything.
         insertedTeams.forEach((t) => { workingTeamsById[t.id] = t; });
         workingMatches = [...workingMatches, ...(insertedMatches || [])];
+
+        matchesThisRound += roundMatches.length;
+        slotsLeftThisRound -= roundMatches.length;
       }
 
-      if (!anyMatchThisRound) break; // no pool could field a match this round
+      if (matchesThisRound === 0) break; // no pool could field a match — stop, don't loop forever
+      matchesRemaining -= matchesThisRound;
     }
 
     if (tournament.status === "setup") {
@@ -1547,8 +1563,8 @@ export default function Tournament({ session }) {
                     )}
                     <div className="helper-text">
                       {courts.length > 0
-                        ? `Matches run up to ${courts.length} at once, matching your ${courts.length} court${courts.length !== 1 ? "s" : ""} — set this on the Courts tab.`
-                        : "No courts added yet — every active player will be scheduled every time you generate, with no cap. Add courts on the Courts tab to limit how many matches run at once."}
+                        ? `This is the exact number of matches created. Up to ${courts.length} run at once, matching your ${courts.length} court${courts.length !== 1 ? "s" : ""} — set this on the Courts tab.`
+                        : "This is the exact number of matches created. Add courts on the Courts tab to limit how many run at the same time — with none set, they're not capped to any particular number at once."}
                     </div>
 
                     {lastGeneratedFromRound !== null && matches.some((m) => m.round_number > lastGeneratedFromRound) && (
