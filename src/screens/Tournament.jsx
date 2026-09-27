@@ -1867,7 +1867,7 @@ export default function Tournament({ session }) {
                           <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--fade)", textTransform: "uppercase", marginBottom: 6 }}>
                             {roundLabel(r, totalBracketRounds)}
                           </div>
-                          {bracketMatches.filter((m) => m.round_number === r).map((m) => {
+                          {bracketMatches.filter((m) => m.round_number === r).sort((a, b) => a.match_index - b.match_index).map((m) => {
                             const t1 = m.team1_id ? teamsById[m.team1_id] : null;
                             const t2 = m.team2_id ? teamsById[m.team2_id] : null;
                             if (m.status === "bye") {
@@ -1878,20 +1878,27 @@ export default function Tournament({ session }) {
                               );
                             }
                             return (
-                              <div key={m.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "5px 0", borderBottom: "1px solid var(--line)" }}>
-                                <div>
-                                  <span style={{ fontWeight: m.winner_team_id === m.team1_id ? 700 : 400, color: m.winner_team_id === m.team1_id ? "var(--green)" : "var(--ink)" }}>
-                                    {t1?.name || "TBD"}
-                                  </span>
-                                  {" vs "}
-                                  <span style={{ fontWeight: m.winner_team_id === m.team2_id ? 700 : 400, color: m.winner_team_id === m.team2_id ? "var(--green)" : "var(--ink)" }}>
-                                    {t2?.name || "TBD"}
-                                  </span>
-                                </div>
-                                <div style={{ color: "var(--fade)", flexShrink: 0, marginLeft: 8 }}>
-                                  {m.status === "completed"
-                                    ? tournament.scoring_mode === "score" ? `${m.team1_score}\u2013${m.team2_score}` : "Final"
-                                    : "Pending"}
+                              <div key={m.id}>
+                                {m.is_third_place && (
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--citrus)", textTransform: "uppercase", marginTop: 4 }}>
+                                    3rd Place Match
+                                  </div>
+                                )}
+                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "5px 0", borderBottom: "1px solid var(--line)" }}>
+                                  <div>
+                                    <span style={{ fontWeight: m.winner_team_id === m.team1_id ? 700 : 400, color: m.winner_team_id === m.team1_id ? "var(--green)" : "var(--ink)" }}>
+                                      {t1?.name || "TBD"}
+                                    </span>
+                                    {" vs "}
+                                    <span style={{ fontWeight: m.winner_team_id === m.team2_id ? 700 : 400, color: m.winner_team_id === m.team2_id ? "var(--green)" : "var(--ink)" }}>
+                                      {t2?.name || "TBD"}
+                                    </span>
+                                  </div>
+                                  <div style={{ color: "var(--fade)", flexShrink: 0, marginLeft: 8 }}>
+                                    {m.status === "completed"
+                                      ? tournament.scoring_mode === "score" ? `${m.team1_score}\u2013${m.team2_score}` : "Final"
+                                      : "Pending"}
+                                  </div>
                                 </div>
                               </div>
                             );
