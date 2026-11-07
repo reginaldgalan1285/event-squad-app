@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Plus, Trophy, Play, X, Pencil, Check, Download } from "lucide-react";
 import { supabase } from "../supabaseClient";
-import { generateRoundRobin, buildBracketSkeleton, computeStandings, roundLabel, generateOpenPlayRound, computePlayerStandings, buildOpenPlayHistory, selectRoundPool } from "../lib/tournament";
+import { generateRoundRobin, buildBracketSkeleton, computeStandings, roundLabel, generateBestOpenPlayRound, computePlayerStandings, buildOpenPlayHistory } from "../lib/tournament";
 import jsPDF from "jspdf";
 
 function LevelsEditor({ levelNames, setLevelNames, newLevelInput, setNewLevelInput }) {
@@ -606,11 +606,13 @@ export default function Tournament({ session }) {
 
         const activeCount = matchesForThisPool * perMatch;
         const genderMode = tournament.require_mixed_doubles ? "mixed" : tournament.group_womens_doubles ? "grouped" : "none";
-        const roundPool = selectRoundPool(ranked, activeCount, genderMode, tournament.match_type);
-        if (roundPool.length < perMatch) continue;
-
-        const { matches: rawMatches } = generateOpenPlayRound({
-          players: roundPool,
+        // Who plays and how they pair are decided together, so players tied on
+        // games played can be chosen to avoid repeat partners — without ever
+        // benching someone who has played fewer games.
+        const { matches: rawMatches } = generateBestOpenPlayRound({
+          rankedPlayers: ranked,
+          activeCount,
+          genderMode,
           matchType: tournament.match_type,
           gamesPlayed: history.gamesPlayed,
           pastPartners: history.pastPartners,

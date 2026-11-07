@@ -168,7 +168,7 @@ export function selectRoundPool(rankedPlayers, activeCount, genderMode, matchTyp
   return [...keptWomen, ...nonWomenInInitial, ...backfill].slice(0, activeCount).map((p) => p.id);
 }
 
-export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPartners, pastOpponents, genderById = {}, requireMixedForWomen = false, groupWomensDoubles = false }) {
+export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPartners, pastOpponents, genderById = {}, requireMixedForWomen = false, groupWomensDoubles = false, maxAttempts = 300 }) {
   const sorted = [...players].sort((a, b) => (gamesPlayed[a] || 0) - (gamesPlayed[b] || 0));
   const isWoman = (p) => genderById[p] === "women";
   const isWomensTeam = (team) => team.length > 0 && team.every(isWoman);
@@ -300,14 +300,66 @@ export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPar
   // First attempt keeps the original fairness-sorted order (so behavior is
   // identical to before whenever that order already works); the rest shuffle.
   let best = attemptDoubles(sorted);
-  const MAX_ATTEMPTS = 300;
+  const MAX_ATTEMPTS = maxAttempts;
   for (let attempt = 1; attempt < MAX_ATTEMPTS && best.score > 0; attempt++) {
     const result = attemptDoubles(shuffled(sorted));
     if (result.matches.length < best.matches.length) continue; // never trade away matches for fewer repeats
     if (result.score < best.score || result.matches.length > best.matches.length) best = result;
   }
 
-  return { matches: best.matches, sitOut: best.sitOut };
+  return { matches: best.matches, sitOut: best.sitOut, score: best.score };
+}
+
+// Picks WHO plays and HOW they pair up, together. selectRoundPool alone
+// takes the top-N by fewest games, which for small rounds (e.g. a single
+// match) leaves the pairing step only a handful of ways to split whichever
+// players happened to be picked — forcing repeat partners long before
+// they're mathematically unavoidable. Here, players with fewer games than
+// the cutoff still ALWAYS play (fairness is untouched); only players tied
+// at the same games-played count are shuffled, so the best combination of
+// tied players — the one giving the fewest repeats — wins.
+export function generateBestOpenPlayRound({
+  rankedPlayers, activeCount, genderMode, matchType, gamesPlayed,
+  pastPartners, pastOpponents, genderById = {},
+  requireMixedForWomen = false, groupWomensDoubles = false, outerAttempts = 30,
+}) {
+  function tieShuffledOrder() {
+    const groups = new Map();
+    for (const p of rankedPlayers) {
+      const g = gamesPlayed[p.id] || 0;
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(p);
+    }
+    return [...groups.keys()].sort((a, b) => a - b).flatMap((g) => {
+      const arr = [...groups.get(g)];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    });
+  }
+
+  let best = null;
+  for (let attempt = 0; attempt < outerAttempts; attempt++) {
+    const order = attempt === 0 ? rankedPlayers : tieShuffledOrder();
+    const pool = selectRoundPool(order, activeCount, genderMode, matchType);
+    if (pool.length < (matchType === "doubles" ? 4 : 2)) continue;
+    const result = generateOpenPlayRound({
+      players: pool, matchType, gamesPlayed, pastPartners, pastOpponents,
+      genderById, requireMixedForWomen, groupWomensDoubles, maxAttempts: 40,
+    });
+    const score = result.score ?? 0;
+    if (
+      !best ||
+      result.matches.length > best.matches.length ||
+      (result.matches.length === best.matches.length && score < best.score)
+    ) {
+      best = { ...result, score, pool };
+    }
+    if (best.score === 0 && best.matches.length > 0) break;
+  }
+  return best || { matches: [], sitOut: [], score: 0, pool: [] };
 }
 
 // Rebuilds per-player games-played counts and the sets of past
