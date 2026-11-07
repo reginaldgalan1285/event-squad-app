@@ -205,70 +205,109 @@ export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPar
   }
 
   // Doubles: form partnerships first, then match partnerships against each other.
-  // When mixed doubles is required, women must be matched BEFORE men start
-  // pairing off with each other — otherwise men can greedily exhaust each
-  // other as partners first (if they happen to have fewer games played),
-  // leaving no man available for a woman even though plenty existed overall.
-  // The same reordering also serves grouped women's doubles: women need to
-  // be processed before other women get snapped up as mixed partners by
-  // someone else's fallback.
-  let partneringOrder = sorted;
-  if (requireMixedForWomen || groupWomensDoubles) {
-    const women = sorted.filter(isWoman);
-    const rest = sorted.filter((p) => !isWoman(p));
-    partneringOrder = [...women, ...rest];
-  }
-  const usedForPartner = new Set();
-  const partnerships = [];
-  for (const p of partneringOrder) {
-    if (usedForPartner.has(p)) continue;
-    const candidates = partneringOrder.filter((o) => o !== p && !usedForPartner.has(o));
-    const pool = partnerPool(p, candidates);
-    let partner = pool.find((o) => !pastPartners.has(pairKey(p, o)));
-    if (!partner) partner = pool[0];
-    if (partner) {
-      usedForPartner.add(p); usedForPartner.add(partner);
-      partnerships.push([p, partner]);
+  //
+  // A single greedy pass (take the first partner who hasn't been partnered
+  // before) can paint itself into a corner: an early player grabs the one
+  // partner a later player needed, forcing a repeat even though a different
+  // overall pairing would have had none. So instead we run many randomized
+  // attempts, score each one by how many repeat partnerships / opponents /
+  // gender-rule violations it produced, and keep the best. The loop stops
+  // early the moment an attempt scores perfectly.
+  function shuffled(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
     }
+    return a;
   }
-  const sitOutFromPartner = sorted.filter((p) => !usedForPartner.has(p));
 
-  const usedForMatch = new Set();
-  const matches = [];
-  for (let i = 0; i < partnerships.length; i++) {
-    const teamA = partnerships[i];
-    const keyA = teamA.join(",");
-    if (usedForMatch.has(keyA)) continue;
-    let bestJ = -1;
-    let bestIsWomensMatch = false;
-    for (let j = i + 1; j < partnerships.length; j++) {
-      const teamB = partnerships[j];
-      const keyB = teamB.join(",");
-      if (usedForMatch.has(keyB)) continue;
-      const noRepeat = !pastOpponents.has(teamPairKey(teamA, teamB));
-      // When grouping women's doubles, a women's team facing another
-      // women's team is the priority — even over avoiding a repeat
-      // opponent — since the whole point is keeping women's matches
-      // separate from mixed/men's matches.
-      const isWomensMatch = groupWomensDoubles && isWomensTeam(teamA) && isWomensTeam(teamB);
-      if (bestJ === -1) { bestJ = j; bestIsWomensMatch = isWomensMatch; continue; }
-      if (groupWomensDoubles && isWomensTeam(teamA)) {
-        if (isWomensMatch && !bestIsWomensMatch) { bestJ = j; bestIsWomensMatch = true; continue; }
-        if (isWomensMatch === bestIsWomensMatch && noRepeat) { bestJ = j; break; }
-        continue;
+  function attemptDoubles(order) {
+    // When mixed doubles is required, women must be matched BEFORE men start
+    // pairing off with each other — otherwise men can greedily exhaust each
+    // other as partners first, leaving no man available for a woman even
+    // though plenty existed overall. Grouped women's doubles needs the same
+    // reordering so women aren't snapped up as someone else's mixed fallback.
+    let partneringOrder = order;
+    if (requireMixedForWomen || groupWomensDoubles) {
+      partneringOrder = [...order.filter(isWoman), ...order.filter((p) => !isWoman(p))];
+    }
+    const usedForPartner = new Set();
+    const partnerships = [];
+    for (const p of partneringOrder) {
+      if (usedForPartner.has(p)) continue;
+      const candidates = partneringOrder.filter((o) => o !== p && !usedForPartner.has(o));
+      const pool = partnerPool(p, candidates);
+      let partner = pool.find((o) => !pastPartners.has(pairKey(p, o)));
+      if (!partner) partner = pool[0];
+      if (partner) {
+        usedForPartner.add(p); usedForPartner.add(partner);
+        partnerships.push([p, partner]);
       }
-      if (noRepeat) { bestJ = j; break; }
     }
-    if (bestJ !== -1) {
-      usedForMatch.add(keyA);
-      usedForMatch.add(partnerships[bestJ].join(","));
-      matches.push({ team1: teamA, team2: partnerships[bestJ] });
-    }
-  }
-  const matchedPlayers = new Set(matches.flatMap((m) => [...m.team1, ...m.team2]));
-  const sitOut = [...sitOutFromPartner, ...partnerships.flat().filter((p) => !matchedPlayers.has(p))];
+    const sitOutFromPartner = order.filter((p) => !usedForPartner.has(p));
 
-  return { matches, sitOut };
+    const usedForMatch = new Set();
+    const matches = [];
+    for (let i = 0; i < partnerships.length; i++) {
+      const teamA = partnerships[i];
+      const keyA = teamA.join(",");
+      if (usedForMatch.has(keyA)) continue;
+      let bestJ = -1;
+      let bestIsWomensMatch = false;
+      for (let j = i + 1; j < partnerships.length; j++) {
+        const teamB = partnerships[j];
+        const keyB = teamB.join(",");
+        if (usedForMatch.has(keyB)) continue;
+        const noRepeat = !pastOpponents.has(teamPairKey(teamA, teamB));
+        // When grouping women's doubles, a women's team facing another
+        // women's team is the priority — even over avoiding a repeat
+        // opponent — since the whole point is keeping women's matches
+        // separate from mixed/men's matches.
+        const isWomensMatch = groupWomensDoubles && isWomensTeam(teamA) && isWomensTeam(teamB);
+        if (bestJ === -1) { bestJ = j; bestIsWomensMatch = isWomensMatch; continue; }
+        if (groupWomensDoubles && isWomensTeam(teamA)) {
+          if (isWomensMatch && !bestIsWomensMatch) { bestJ = j; bestIsWomensMatch = true; continue; }
+          if (isWomensMatch === bestIsWomensMatch && noRepeat) { bestJ = j; break; }
+          continue;
+        }
+        if (noRepeat) { bestJ = j; break; }
+      }
+      if (bestJ !== -1) {
+        usedForMatch.add(keyA);
+        usedForMatch.add(partnerships[bestJ].join(","));
+        matches.push({ team1: teamA, team2: partnerships[bestJ] });
+      }
+    }
+    const matchedPlayers = new Set(matches.flatMap((m) => [...m.team1, ...m.team2]));
+    const sitOut = [...sitOutFromPartner, ...partnerships.flat().filter((p) => !matchedPlayers.has(p))];
+
+    // Score: lower is better. Repeat partners dominate (that's what players
+    // notice most), then gender-rule violations, then repeat opponents.
+    let repeatPartners = 0, repeatOpponents = 0, violations = 0;
+    for (const m of matches) {
+      for (const team of [m.team1, m.team2]) {
+        if (team.length === 2 && pastPartners.has(pairKey(team[0], team[1]))) repeatPartners++;
+        if (requireMixedForWomen && team.length === 2 && team.every(isWoman)) violations++;
+      }
+      if (pastOpponents.has(teamPairKey(m.team1, m.team2))) repeatOpponents++;
+      if (groupWomensDoubles && (isWomensTeam(m.team1) !== isWomensTeam(m.team2))) violations++;
+    }
+    const score = violations * 100000 + repeatPartners * 1000 + repeatOpponents;
+    return { matches, sitOut, score, repeatPartners };
+  }
+
+  // First attempt keeps the original fairness-sorted order (so behavior is
+  // identical to before whenever that order already works); the rest shuffle.
+  let best = attemptDoubles(sorted);
+  const MAX_ATTEMPTS = 300;
+  for (let attempt = 1; attempt < MAX_ATTEMPTS && best.score > 0; attempt++) {
+    const result = attemptDoubles(shuffled(sorted));
+    if (result.matches.length < best.matches.length) continue; // never trade away matches for fewer repeats
+    if (result.score < best.score || result.matches.length > best.matches.length) best = result;
+  }
+
+  return { matches: best.matches, sitOut: best.sitOut };
 }
 
 // Rebuilds per-player games-played counts and the sets of past
