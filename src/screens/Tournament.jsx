@@ -1452,6 +1452,9 @@ export default function Tournament({ session }) {
                         />
                         Group women's doubles — match women's pairs against each other
                       </label>
+                      <div className="helper-text">
+                        Can be changed any time. Applies to matches generated from now on — matches already generated keep their pairings.
+                      </div>
                     </>
                   )}
 
