@@ -757,3 +757,58 @@ alter table tournaments add column require_mixed_doubles boolean not null defaul
 -- fields stay free-text, for tournaments that never set this up.
 -- ============================================================
 alter table tournaments add column level_names text[] not null default '{}';
+
+-- ============================================================
+-- Pools now also apply to open-play mode, not just fixed-team round
+-- robin — each pool runs its own independent rotation.
+-- ============================================================
+alter table tournament_players add column pool_number int not null default 1;
+
+-- ============================================================
+-- Optional seed number for bracket team ordering. Null means "use
+-- entry order" (the existing default behavior) — this only matters
+-- once a host uses "Randomize seeding" before generating a bracket.
+-- ============================================================
+alter table tournament_teams add column seed int;
+
+-- ============================================================
+-- Lets the host remove a participant directly (duplicate or wrong
+-- entries), separate from a player's own self-service "leave" —
+-- this bypasses allow_leave, since it's a host moderation action,
+-- not something the roster-lock setting is meant to restrict.
+-- ============================================================
+create policy "members_delete_host" on event_members
+  for delete using (
+    is_host = false
+    and exists (select 1 from events e where e.id = event_id and e.host_id = auth.uid())
+  );
+
+-- ============================================================
+-- Alternative to "ensure mixed doubles" for open play: instead of
+-- forcing every woman into a mixed pair, let women's pairs form and
+-- match them against other women's pairs when there are enough
+-- women to do so. Mutually exclusive with require_mixed_doubles.
+-- ============================================================
+alter table tournaments add column group_womens_doubles boolean not null default false;
+
+-- ============================================================
+-- Optional 3rd place match for single-elimination brackets (both
+-- standalone bracket tournaments and playoffs after pool play): the
+-- two semifinal LOSERS play each other, separate from the normal
+-- winner-advances chain (next_match_id/next_match_slot), so losers
+-- need their own routing.
+-- ============================================================
+alter table tournaments add column third_place_match boolean not null default false;
+alter table tournament_matches add column is_third_place boolean not null default false;
+alter table tournament_matches add column loser_next_match_id uuid references tournament_matches(id) on delete set null;
+alter table tournament_matches add column loser_next_slot int;
+
+-- ============================================================
+-- Open play: option to turn OFF catch-up for latecomers. When off, a
+-- player who joins mid-session starts level with the lowest active
+-- player (join_baseline, recorded when they're added) instead of at 0
+-- games, so they just join the normal rotation rather than being
+-- scheduled extra until they match everyone else. Default stays on.
+-- ============================================================
+alter table tournaments add column catch_up_latecomers boolean not null default true;
+alter table tournament_players add column join_baseline int not null default 0;

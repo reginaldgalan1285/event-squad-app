@@ -1,4 +1,7 @@
 {
+  "redirects": [
+    { "source": "/offline", "destination": "/offline/", "permanent": false }
+  ],
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]

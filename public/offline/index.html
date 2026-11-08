@@ -1,0 +1,1791 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Event Squad</title>
+<meta name="description" content="Round robins, brackets and open-play sessions that keep working with no signal." />
+<meta name="theme-color" content="#1B4332" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" type="image/png" href="icon-192.png" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Event Squad" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Event Squad — tournaments &amp; open play, even with no signal" />
+<meta property="og:description" content="Round robins, brackets and open-play sessions. Open it once, add it to your home screen, and it works offline." />
+<meta property="og:image" content="https://event-squad-app.vercel.app/offline/icon-maskable-512.png" />
+<style>
+  :root {
+    --green: #1B4332; --green-dark: #0F2A1F; --chalk: #F7F5F0; --citrus: #FFB627;
+    --coral: #FF6152; --ink: #16233A; --line: #E4E1D8; --white: #FFFFFF; --fade: #8A9A99;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #E9E5D8; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: var(--ink); }
+  .shell { min-height: 100vh; display: flex; justify-content: center; padding: 20px 10px; }
+  .phone { width: 100%; max-width: 460px; background: var(--chalk); border-radius: 22px; box-shadow: 0 20px 50px rgba(22,35,58,.25); overflow: hidden; display: flex; flex-direction: column; min-height: 90vh; }
+  .header { background: linear-gradient(160deg, var(--green), var(--green-dark)); color: #fff; padding: 18px 18px 16px; flex-shrink: 0; }
+  .header-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .icon-btn { background: none; border: none; color: inherit; cursor: pointer; font-size: 18px; line-height: 1; padding: 4px; }
+  h1.title { font-size: 20px; font-weight: 900; margin: 8px 0 0; letter-spacing: .2px; }
+  .subtitle { font-size: 11.5px; opacity: .85; margin-top: 4px; }
+  .badge-offline { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 3px 10px; font-size: 10.5px; font-weight: 700; margin-top: 10px; }
+  .body { flex: 1; overflow-y: auto; padding: 16px 18px 90px; }
+  .field-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--fade); margin: 14px 0 6px; }
+  .field-label:first-child { margin-top: 0; }
+  input[type=text], input[type=number], select, textarea {
+    width: 100%; border: 1.5px solid var(--line); border-radius: 10px; padding: 10px 12px;
+    font-size: 14px; font-family: inherit; outline: none; background: #fff; color: var(--ink);
+  }
+  textarea { resize: vertical; }
+  .btn { border: none; border-radius: 12px; font-weight: 700; cursor: pointer; padding: 12px 0; font-size: 13.5px; width: 100%; }
+  .btn-primary { background: var(--green); color: #fff; }
+  .btn-accent { background: var(--citrus); color: var(--ink); }
+  .btn-outline { background: transparent; border: 1.5px solid var(--coral); color: var(--coral); }
+  .btn-small { padding: 8px 14px; width: auto; border-radius: 9px; font-size: 12.5px; }
+  .btn-row { display: flex; gap: 8px; }
+  .btn-row .btn { flex: 1; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 8px; }
+  .row-between { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .name { font-weight: 700; font-size: 13.5px; }
+  .sub { font-size: 11px; color: var(--fade); margin-top: 2px; }
+  .x-btn { background: none; border: none; color: var(--coral); cursor: pointer; font-size: 16px; padding: 4px; flex-shrink: 0; }
+  .section-title { font-weight: 900; font-size: 12px; letter-spacing: .3px; color: var(--fade); margin: 18px 0 8px; }
+  .section-title:first-child { margin-top: 0; }
+  .empty { text-align: center; padding: 30px 10px; color: var(--fade); font-size: 13px; }
+  .match-card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 8px; }
+  .match-teams { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .team-name { flex: 1; font-size: 13px; font-weight: 700; }
+  .team-name.right { text-align: right; }
+  .team-name.winner { color: var(--green); }
+  .vs { font-size: 10px; color: var(--fade); font-weight: 700; }
+  .result-line { text-align: center; font-size: 12px; color: var(--fade); margin-top: 6px; }
+  .score-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+  .score-row input { width: 46px; flex: 0 0 46px; text-align: center; padding: 7px; }
+  .wl-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .wl-row .btn { width: auto; flex: 1; padding: 8px 0; font-size: 12px; }
+  .meta-row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 10.5px; color: var(--fade); }
+  select.court-select { font-size: 10.5px; padding: 3px 6px; border-radius: 6px; width: auto; }
+  .timer-badge { font-family: monospace; font-weight: 700; font-size: 11px; padding: 2px 7px; border-radius: 7px; background: var(--chalk); }
+  .timer-badge.expired { background: #FFEFEC; color: var(--coral); }
+  table.standings { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  table.standings th, table.standings td { padding: 7px 5px; text-align: center; border-bottom: 1px solid var(--line); }
+  table.standings th { font-size: 9px; text-transform: uppercase; color: var(--fade); }
+  table.standings td:first-child, table.standings th:first-child { text-align: left; }
+  .tabs { display: flex; gap: 16px; padding: 10px 18px 0; background: #fff; border-bottom: 1px solid var(--line); overflow-x: auto; flex-shrink: 0; }
+  .tab { background: none; border: none; padding: 0 0 9px; font-size: 11.5px; font-weight: 700; color: var(--fade); cursor: pointer; white-space: nowrap; border-bottom: 2px solid transparent; text-transform: uppercase; letter-spacing: .3px; }
+  .tab.active { color: var(--ink); border-color: var(--green); }
+  .champion-banner { background: var(--ink); color: #fff; border-radius: 12px; padding: 14px; text-align: center; margin-bottom: 14px; }
+  .champion-banner .name { color: var(--citrus); font-size: 16px; margin-top: 4px; }
+  .helper { font-size: 11px; color: var(--fade); margin-top: 6px; }
+  .checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin-top: 14px; cursor: pointer; }
+  .pool-header { font-weight: 900; font-size: 12.5px; margin: 14px 0 8px; }
+  .footer-note { text-align: center; font-size: 10px; color: var(--fade); padding: 10px 18px 4px; }
+  @media print {
+    body { background: #fff; }
+    .header, .tabs, .btn, input, select, .icon-btn, .x-btn, .footer-note { display: none !important; }
+    .shell { padding: 0; }
+    .phone { box-shadow: none; max-width: 100%; min-height: 0; }
+    .body { padding: 0; overflow: visible; }
+  }
+</style>
+</head>
+<body>
+<div class="shell"><div class="phone" id="app"></div></div>
+<script>
+"use strict";
+
+/* ============================================================
+   STORAGE — everything lives in this browser's localStorage.
+   No network calls anywhere in this file. Data does not sync
+   between devices; use Export/Import to move it manually.
+============================================================ */
+const STORAGE_KEY = "offline_bracket_v1";
+function loadStore() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || { tournaments: {} }; }
+  catch { return { tournaments: {} }; }
+}
+function saveStore() { localStorage.setItem(STORAGE_KEY, JSON.stringify(store)); }
+let store = loadStore();
+let ui = { screen: "list", activeId: null, tab: "teams", editingCourtId: null, editingMatchId: null, scoreDrafts: {}, showNewForm: false, newLevelNames: [], swappingSide: null, swapDraft: { p1: "", p2: "" } };
+
+function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+function esc(s) { const d = document.createElement("div"); d.innerText = s == null ? "" : s; return d.innerHTML; }
+
+/* ============================================================
+   ALGORITHMS — ported from the online app's tournament.js
+============================================================ */
+function generateRoundRobin(teamIds) {
+  let arr = [...teamIds];
+  if (arr.length % 2 !== 0) arr.push(null);
+  const n = arr.length, rounds = n - 1, half = n / 2;
+  const matches = [];
+  for (let r = 0; r < rounds; r++) {
+    for (let i = 0; i < half; i++) {
+      const a = arr[i], b = arr[n - 1 - i];
+      if (a !== null && b !== null) matches.push({ round: r + 1, matchIndex: i, team1: a, team2: b, isBye: false });
+      else { const solo = a !== null ? a : b; if (solo !== null) matches.push({ round: r + 1, matchIndex: i, team1: solo, team2: null, isBye: true }); }
+    }
+    arr = [arr[0], arr[n - 1], ...arr.slice(1, n - 1)];
+  }
+  return matches;
+}
+function nextPow2(n) { return Math.pow(2, Math.ceil(Math.log2(Math.max(n, 1)))); }
+function seedOrder(size) {
+  let seeds = [1];
+  while (seeds.length < size) { const n = seeds.length * 2, next = []; for (const s of seeds) next.push(s, n + 1 - s); seeds = next; }
+  return seeds;
+}
+function buildBracketSkeleton(teamIds) {
+  const size = nextPow2(teamIds.length);
+  const order = seedOrder(size);
+  const slots = order.map((seed) => (seed <= teamIds.length ? teamIds[seed - 1] : null));
+  const totalRounds = Math.log2(size);
+  const matches = [];
+  for (let i = 0; i < size / 2; i++) {
+    const t1 = slots[i * 2], t2 = slots[i * 2 + 1];
+    matches.push({ round: 1, matchIndex: i, team1: t1, team2: t2, isBye: !t1 || !t2 });
+  }
+  let count = size / 2;
+  for (let r = 2; r <= totalRounds; r++) { count /= 2; for (let i = 0; i < count; i++) matches.push({ round: r, matchIndex: i, team1: null, team2: null, isBye: false }); }
+  return matches;
+}
+function computeStandings(teams, matches) {
+  const stats = {};
+  teams.forEach((t) => { stats[t.id] = { team: t, played: 0, wins: 0, losses: 0, ties: 0, pointsFor: 0, pointsAgainst: 0 }; });
+  const completed = matches.filter((m) => m.status === "completed" && m.team1Id && m.team2Id);
+  for (const m of completed) {
+    const s1 = stats[m.team1Id], s2 = stats[m.team2Id];
+    if (!s1 || !s2) continue;
+    s1.played++; s2.played++;
+    if (m.isTie) { s1.ties++; s2.ties++; }
+    else if (m.winnerId === m.team1Id) { s1.wins++; s2.losses++; }
+    else if (m.winnerId === m.team2Id) { s2.wins++; s1.losses++; }
+    if (m.score1 != null && m.score2 != null) { s1.pointsFor += m.score1; s1.pointsAgainst += m.score2; s2.pointsFor += m.score2; s2.pointsAgainst += m.score1; }
+  }
+  let rows = Object.values(stats).map((s) => ({ ...s, winPct: s.played ? (s.wins + .5 * s.ties) / s.played : 0, pointDiff: s.pointsFor - s.pointsAgainst, tiebreak: "" }));
+  const byWins = {};
+  rows.forEach((r) => { (byWins[r.wins] = byWins[r.wins] || []).push(r); });
+  const ordered = [];
+  Object.keys(byWins).map(Number).sort((a, b) => b - a).forEach((w) => {
+    const group = byWins[w];
+    if (group.length === 1) { ordered.push(group); return; }
+    const ids = new Set(group.map((g) => g.team.id));
+    const sub = completed.filter((m) => ids.has(m.team1Id) && ids.has(m.team2Id));
+    if (group.length === 2) {
+      const [a, b] = group;
+      const m = sub.find((m) => (m.team1Id === a.team.id && m.team2Id === b.team.id) || (m.team1Id === b.team.id && m.team2Id === a.team.id));
+      if (m && !m.isTie) {
+        const aWon = m.winnerId === a.team.id;
+        (aWon ? a : b).tiebreak = "Beat " + (aWon ? b.team.name : a.team.name);
+        (aWon ? b : a).tiebreak = "Lost to " + (aWon ? a.team.name : b.team.name);
+        ordered.push(aWon ? [a, b] : [b, a]);
+      } else { ordered.push([...group].sort((x, y) => y.pointDiff - x.pointDiff)); }
+      return;
+    }
+    const diff = {}; ids.forEach((id) => (diff[id] = 0));
+    sub.forEach((m) => { if (m.score1 != null && m.score2 != null) { diff[m.team1Id] += m.score1 - m.score2; diff[m.team2Id] += m.score2 - m.score1; } });
+    group.forEach((g) => { g.tiebreak = "Group " + (diff[g.team.id] > 0 ? "+" : "") + diff[g.team.id]; });
+    ordered.push([...group].sort((x, y) => diff[y.team.id] - diff[x.team.id] || y.pointDiff - x.pointDiff));
+  });
+  return ordered.flat();
+}
+function roundLabel(r, total) {
+  const fromEnd = total - r;
+  if (fromEnd === 0) return "Final";
+  if (fromEnd === 1) return "Semifinals";
+  if (fromEnd === 2) return "Quarterfinals";
+  return "Round of " + Math.pow(2, fromEnd + 1);
+}
+
+/* ---------- Open play: partner-rotation mixer mode ---------- */
+function pairKey(a, b) { return [a, b].sort().join("|"); }
+function teamPairKey(t1, t2) { return [[...t1].sort().join(","), [...t2].sort().join(",")].sort().join("|"); }
+
+// Picks who plays this round. Normally that's just "fewest games played
+// so far" — but when mixed doubles is required, picking purely by that
+// rule can select an unbalanced group (e.g. 3 men + 1 woman) that can't
+// form all-mixed pairs no matter how good the pairing step is. This aims
+// for an even men/women split first, then fewest-games-played within
+// each gender.
+function selectRoundPool(rankedPlayers, activeCount, genderMode, matchType) {
+  if (matchType !== "doubles" || (genderMode !== "mixed" && genderMode !== "grouped")) {
+    return rankedPlayers.slice(0, activeCount).map((p) => p.id);
+  }
+  if (genderMode === "mixed") {
+    // Start from ordinary fair selection — do NOT always maximize how many
+    // women are included. With few women relative to men, always cramming
+    // in every available woman every round means she plays every round
+    // while men merely rotate through leftover slots, so women end up
+    // playing far more total games than any individual man. Only adjust
+    // if the fair selection isn't actually feasible: every included woman
+    // needs an available male partner.
+    const initial = rankedPlayers.slice(0, activeCount);
+    const initialWomen = initial.filter((p) => p.gender === "women");
+    const totalNonWomen = rankedPlayers.filter((p) => p.gender !== "women").length;
+    const maxFeasibleWomen = Math.min(Math.floor(activeCount / 2), totalNonWomen);
+    if (initialWomen.length <= maxFeasibleWomen) return initial.map((p) => p.id);
+    const keptWomen = initialWomen.slice(0, maxFeasibleWomen);
+    const initialNonWomen = initial.filter((p) => p.gender !== "women");
+    const selectedIds = new Set(initial.map((p) => p.id));
+    const excess = initialWomen.length - maxFeasibleWomen;
+    const backfill = rankedPlayers.filter((p) => !selectedIds.has(p.id) && p.gender !== "women").slice(0, excess);
+    return [...keptWomen, ...initialNonWomen, ...backfill].slice(0, activeCount).map((p) => p.id);
+  }
+  // Grouped mode: round the number of women in the fair selection down to
+  // a multiple of 4 — an EVEN number of women's TEAMS — so they can
+  // always play fully against each other with zero crossover. Bumped
+  // women are backfilled with the next fairest non-women; with fewer
+  // than 4 women total, this mode never selects them at all.
+  const initial = rankedPlayers.slice(0, activeCount);
+  const initialWomen = initial.filter((p) => p.gender === "women");
+  const excess = initialWomen.length % 4;
+  if (excess === 0) return initial.map((p) => p.id);
+  const keptWomen = initialWomen.slice(0, initialWomen.length - excess);
+  const nonWomenInInitial = initial.filter((p) => p.gender !== "women");
+  const selectedIds = new Set(initial.map((p) => p.id));
+  const backfill = rankedPlayers.filter((p) => !selectedIds.has(p.id) && p.gender !== "women").slice(0, excess);
+  return [...keptWomen, ...nonWomenInInitial, ...backfill].slice(0, activeCount).map((p) => p.id);
+}
+
+// Pairs up the given players for one round, minimizing repeat
+// partnerships and repeat opponents. Two mutually-exclusive gender
+// preferences: forced mixed (never two women together, unless no man
+// is left this round), or grouped (prefer another woman as partner,
+// then prefer matching two women's teams against each other).
+function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPartners, pastOpponents, genderById = {}, requireMixedForWomen = false, groupWomensDoubles = false, maxAttempts = 300 }) {
+  const sorted = [...players].sort((a, b) => (gamesPlayed[a] || 0) - (gamesPlayed[b] || 0));
+  const isWoman = (p) => genderById[p] === "women";
+  const isWomensTeam = (team) => team.length > 0 && team.every(isWoman);
+
+  function partnerPool(p, candidates) {
+    if (requireMixedForWomen && isWoman(p)) {
+      const nonWomen = candidates.filter((o) => !isWoman(o));
+      if (nonWomen.length > 0) return nonWomen;
+    }
+    if (groupWomensDoubles && isWoman(p)) {
+      const women = candidates.filter(isWoman);
+      if (women.length > 0) return women;
+    }
+    return candidates;
+  }
+
+  if (matchType === "singles") {
+    const used = new Set(), matches = [];
+    for (const p of sorted) {
+      if (used.has(p)) continue;
+      let opp = sorted.find((o) => o !== p && !used.has(o) && !pastOpponents.has(pairKey(p, o)));
+      if (!opp) opp = sorted.find((o) => o !== p && !used.has(o));
+      if (opp) { used.add(p); used.add(opp); matches.push({ team1: [p], team2: [opp] }); }
+    }
+    return { matches, sitOut: sorted.filter((p) => !used.has(p)) };
+  }
+
+  // A single greedy pass (take the first partner who hasn't been partnered
+  // before) can paint itself into a corner: an early player grabs the one
+  // partner a later player needed, forcing a repeat even though a different
+  // overall pairing would have had none. So instead run many randomized
+  // attempts, score each by repeat partnerships / gender-rule violations /
+  // repeat opponents, and keep the best. Stops early on a perfect score.
+  function shuffled(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function attemptDoubles(order) {
+    // When mixed doubles is required, women must be matched with partners
+    // BEFORE men start pairing off with each other — otherwise men can
+    // greedily exhaust each other first, leaving no man available by the
+    // time a woman's turn comes up. Grouped doubles needs the same order.
+    let partneringOrder = order;
+    if (requireMixedForWomen || groupWomensDoubles) {
+      partneringOrder = [...order.filter(isWoman), ...order.filter((p) => !isWoman(p))];
+    }
+
+    const usedForPartner = new Set(), partnerships = [];
+    for (const p of partneringOrder) {
+      if (usedForPartner.has(p)) continue;
+      const candidates = partneringOrder.filter((o) => o !== p && !usedForPartner.has(o));
+      const pool = partnerPool(p, candidates);
+      let partner = pool.find((o) => !pastPartners.has(pairKey(p, o)));
+      if (!partner) partner = pool[0];
+      if (partner) { usedForPartner.add(p); usedForPartner.add(partner); partnerships.push([p, partner]); }
+    }
+
+    let teamPool = [...partnerships], matches = [];
+    while (teamPool.length >= 2) {
+      const teamA = teamPool.shift();
+      let bestIdx = 0, bestCount = Infinity, bestIsWomensMatch = false;
+      teamPool.forEach((teamB, idx) => {
+        const repeatCount = teamA.reduce((s, p1) => s + teamB.reduce((s2, p2) => s2 + (pastOpponents.has(pairKey(p1, p2)) ? 1 : 0), 0), 0);
+        const isWomensMatch = groupWomensDoubles && isWomensTeam(teamA) && isWomensTeam(teamB);
+        if (groupWomensDoubles && isWomensTeam(teamA)) {
+          // A women's team facing another women's team takes priority over
+          // avoiding a repeat opponent — keeps women's matches separate.
+          if (isWomensMatch && !bestIsWomensMatch) { bestIdx = idx; bestCount = repeatCount; bestIsWomensMatch = true; return; }
+          if (isWomensMatch === bestIsWomensMatch && repeatCount < bestCount) { bestIdx = idx; bestCount = repeatCount; }
+          return;
+        }
+        if (repeatCount < bestCount) { bestIdx = idx; bestCount = repeatCount; }
+      });
+      const teamB = teamPool.splice(bestIdx, 1)[0];
+      matches.push({ team1: teamA, team2: teamB });
+    }
+    const usedPlayers = new Set(partnerships.flat());
+    const sitOut = order.filter((p) => !usedPlayers.has(p));
+
+    // Score (lower is better): repeat partners dominate, then gender-rule
+    // violations, then repeat opponents.
+    let repeatPartners = 0, repeatOpponents = 0, violations = 0;
+    for (const m of matches) {
+      for (const team of [m.team1, m.team2]) {
+        if (team.length === 2 && pastPartners.has(pairKey(team[0], team[1]))) repeatPartners++;
+        if (requireMixedForWomen && team.length === 2 && team.every(isWoman)) violations++;
+      }
+      m.team1.forEach((a) => m.team2.forEach((b) => { if (pastOpponents.has(pairKey(a, b))) repeatOpponents++; }));
+      if (groupWomensDoubles && (isWomensTeam(m.team1) !== isWomensTeam(m.team2))) violations++;
+    }
+    return { matches, sitOut, score: violations * 100000 + repeatPartners * 1000 + repeatOpponents };
+  }
+
+  // First attempt keeps the original fairness-sorted order; the rest shuffle.
+  let best = attemptDoubles(sorted);
+  const MAX_ATTEMPTS = maxAttempts;
+  for (let attempt = 1; attempt < MAX_ATTEMPTS && best.score > 0; attempt++) {
+    const result = attemptDoubles(shuffled(sorted));
+    if (result.matches.length < best.matches.length) continue; // never trade away matches for fewer repeats
+    if (result.score < best.score || result.matches.length > best.matches.length) best = result;
+  }
+  return { matches: best.matches, sitOut: best.sitOut, score: best.score };
+}
+
+// Rebuilds games-played/pastPartners/pastOpponents from every match
+// played so far, resolving ephemeral per-round pairings back to the
+// individual players via sourcePlayer1Id/sourcePlayer2Id. Called fresh
+// every time rounds are generated, so a latecomer or "generate more
+// rounds later" both just work with no separate state to track.
+// Picks WHO plays and HOW they pair up, together. selectRoundPool alone
+// takes the top-N by fewest games, which for small rounds (e.g. a single
+// match) leaves the pairing step only a few ways to split whichever players
+// were picked — forcing repeat partners long before they're unavoidable.
+// Players with fewer games than the cutoff still ALWAYS play (fairness is
+// untouched); only players tied at the same games-played count are shuffled,
+// so the combination of tied players giving the fewest repeats wins.
+function generateBestOpenPlayRound({ rankedPlayers, activeCount, genderMode, matchType, gamesPlayed, pastPartners, pastOpponents, genderById = {}, requireMixedForWomen = false, groupWomensDoubles = false, outerAttempts = 30, catchUp = true }) {
+  function tieShuffledOrder() {
+    const groups = new Map();
+    for (const p of rankedPlayers) {
+      const g = gamesPlayed[p.id] || 0;
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(p);
+    }
+    return [...groups.keys()].sort((a, b) => a - b).flatMap((g) => {
+      const arr = [...groups.get(g)];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    });
+  }
+  // In mixed-doubles mode, an all-male pair is something to avoid when it's
+  // avoidable — but only by choosing among players who are TIED on games
+  // played (this helper only ever shuffles ties), so fairness is untouched:
+  // it never puts someone with more games on court just to include a woman.
+  // When fairness itself dictates an all-male pair (e.g. few women, or the
+  // women are ahead on games), every candidate has it and nothing changes.
+  function malePairPenalty(matches) {
+    if (genderMode !== "mixed") return 0;
+    let n = 0;
+    for (const m of matches) {
+      for (const team of [m.team1, m.team2]) {
+        if (team.length === 2 && !team.some((id) => genderById[id] === "women")) n++;
+      }
+    }
+    return n * 5000;
+  }
+
+  function bestForCount(count) {
+    let best = null;
+    for (let attempt = 0; attempt < outerAttempts; attempt++) {
+      const order = attempt === 0 ? rankedPlayers : tieShuffledOrder();
+      const pool = selectRoundPool(order, count, genderMode, matchType);
+      if (pool.length < (matchType === "doubles" ? 4 : 2)) continue;
+      const result = generateOpenPlayRound({ players: pool, matchType, gamesPlayed, pastPartners, pastOpponents, genderById, requireMixedForWomen, groupWomensDoubles, maxAttempts: 40 });
+      const score = (result.score == null ? 0 : result.score) + malePairPenalty(result.matches);
+      if (!best || result.matches.length > best.matches.length || (result.matches.length === best.matches.length && score < best.score)) {
+        best = Object.assign({}, result, { score, pool });
+      }
+      if (best.score === 0 && best.matches.length > 0) break;
+    }
+    return best || { matches: [], sitOut: [], score: 0, pool: [] };
+  }
+
+  let count = activeCount;
+  let result = bestForCount(count);
+
+  // Catch-up: a player can only play once per time-slot, so when several
+  // matches run at once and everyone fits (e.g. 8 players on 2 courts), a
+  // latecomer gains exactly one game per slot — the same as everyone else —
+  // and never closes the gap. If playing this many matches would put
+  // someone who's AHEAD on court while another player is 2+ games behind,
+  // run one fewer concurrent match instead (leaving a court idle), so the
+  // players who are ahead rotate out and the stragglers catch up. Always
+  // runs at least one match. Skipped for grouped women's doubles, where
+  // some players can be deliberately held out for long stretches.
+  if (catchUp && genderMode !== "grouped") {
+    const perMatch = matchType === "doubles" ? 4 : 2;
+    const minAll = Math.min.apply(null, rankedPlayers.map((p) => gamesPlayed[p.id] || 0));
+    while (count > perMatch) {
+      const ids = result.matches.flatMap((m) => [...m.team1, ...m.team2]);
+      if (ids.length === 0) break;
+      const maxPlaying = Math.max.apply(null, ids.map((id) => gamesPlayed[id] || 0));
+      if (maxPlaying - minAll <= 1) break;
+      count -= perMatch;
+      result = bestForCount(count);
+    }
+  }
+  return result;
+}
+
+function buildOpenPlayHistory(matches, tById) {
+  const gamesPlayed = {}, pastPartners = new Set(), pastOpponents = new Set();
+  function resolve(teamId) {
+    const t = tById[teamId];
+    if (!t || !t.sourcePlayer1Id) return [];
+    return [t.sourcePlayer1Id, t.sourcePlayer2Id].filter(Boolean);
+  }
+  for (const m of matches) {
+    if (!m.team1Id || !m.team2Id) continue;
+    const p1s = resolve(m.team1Id), p2s = resolve(m.team2Id);
+    if (p1s.length === 2) pastPartners.add(pairKey(p1s[0], p1s[1]));
+    if (p2s.length === 2) pastPartners.add(pairKey(p2s[0], p2s[1]));
+    p1s.forEach((a) => p2s.forEach((b) => pastOpponents.add(pairKey(a, b))));
+    [...p1s, ...p2s].forEach((p) => { gamesPlayed[p] = (gamesPlayed[p] || 0) + 1; });
+  }
+  return { gamesPlayed, pastPartners, pastOpponents };
+}
+
+// Standings for open play: aggregated by individual player, not by the
+// ephemeral per-round "team" — resolved the same way as history above.
+// Same tiebreak cascade as computeStandings (head-to-head for 2-way,
+// group-scoped point differential for 3+-way).
+function computePlayerStandings(players, matches, tById) {
+  function resolve(teamId) {
+    const t = tById[teamId];
+    if (!t || !t.sourcePlayer1Id) return [];
+    return [t.sourcePlayer1Id, t.sourcePlayer2Id].filter(Boolean);
+  }
+  const completed = matches.filter((m) => m.status === "completed" && m.team1Id && m.team2Id);
+  const stats = {};
+  players.forEach((p) => { stats[p.id] = { player: p, played: 0, wins: 0, losses: 0, ties: 0, pointsFor: 0, pointsAgainst: 0 }; });
+  for (const m of completed) {
+    const p1s = resolve(m.team1Id), p2s = resolve(m.team2Id);
+    for (const p of p1s) {
+      const s = stats[p]; if (!s) continue;
+      s.played++;
+      if (m.isTie) s.ties++; else if (m.winnerId === m.team1Id) s.wins++; else if (m.winnerId === m.team2Id) s.losses++;
+      if (m.score1 != null && m.score2 != null) { s.pointsFor += m.score1; s.pointsAgainst += m.score2; }
+    }
+    for (const p of p2s) {
+      const s = stats[p]; if (!s) continue;
+      s.played++;
+      if (m.isTie) s.ties++; else if (m.winnerId === m.team2Id) s.wins++; else if (m.winnerId === m.team1Id) s.losses++;
+      if (m.score1 != null && m.score2 != null) { s.pointsFor += m.score2; s.pointsAgainst += m.score1; }
+    }
+  }
+  let rows = Object.values(stats).map((s) => ({ ...s, winPct: s.played ? (s.wins + .5 * s.ties) / s.played : 0, pointDiff: s.pointsFor - s.pointsAgainst, tiebreak: "" }));
+  function opposing(idA, idB) {
+    return completed.filter((m) => { const p1s = resolve(m.team1Id), p2s = resolve(m.team2Id); return (p1s.includes(idA) && p2s.includes(idB)) || (p1s.includes(idB) && p2s.includes(idA)); });
+  }
+  const byWins = {};
+  rows.forEach((r) => { (byWins[r.wins] = byWins[r.wins] || []).push(r); });
+  const ordered = [];
+  Object.keys(byWins).map(Number).sort((a, b) => b - a).forEach((w) => {
+    const group = byWins[w];
+    if (group.length === 1) { ordered.push(group); return; }
+    if (group.length === 2) {
+      const [a, b] = group;
+      const opp = opposing(a.player.id, b.player.id);
+      let aWins = 0, bWins = 0;
+      opp.forEach((m) => {
+        if (m.isTie) return;
+        const p1s = resolve(m.team1Id);
+        const aOnTeam1 = p1s.includes(a.player.id);
+        const team1Won = m.winnerId === m.team1Id;
+        if (aOnTeam1 === team1Won) aWins++; else bWins++;
+      });
+      if (aWins !== bWins) {
+        const winner = aWins > bWins ? a : b, loser = winner === a ? b : a;
+        winner.tiebreak = "Beat " + loser.player.name;
+        loser.tiebreak = "Lost to " + winner.player.name;
+        ordered.push([winner, loser]);
+      } else { ordered.push([...group].sort((x, y) => y.pointDiff - x.pointDiff)); }
+      return;
+    }
+    const groupIds = new Set(group.map((g) => g.player.id));
+    const miniDiff = {}; group.forEach((g) => (miniDiff[g.player.id] = 0));
+    completed.forEach((m) => {
+      if (m.score1 == null || m.score2 == null) return;
+      const p1s = resolve(m.team1Id), p2s = resolve(m.team2Id);
+      const diff = m.score1 - m.score2;
+      if (p2s.some((pid) => groupIds.has(pid))) p1s.forEach((pid) => { if (groupIds.has(pid)) miniDiff[pid] += diff; });
+      if (p1s.some((pid) => groupIds.has(pid))) p2s.forEach((pid) => { if (groupIds.has(pid)) miniDiff[pid] -= diff; });
+    });
+    group.forEach((g) => { g.tiebreak = "Group " + (miniDiff[g.player.id] > 0 ? "+" : "") + miniDiff[g.player.id]; });
+    ordered.push([...group].sort((x, y) => miniDiff[y.player.id] - miniDiff[x.player.id] || y.pointDiff - x.pointDiff));
+  });
+  return ordered.flat();
+}
+
+/* ============================================================
+   DATA HELPERS
+============================================================ */
+function activeT() { return store.tournaments[ui.activeId]; }
+function newTournament() {
+  return {
+    id: uid(), name: "Tournament", format: "round_robin", matchType: "doubles", scoringMode: "score",
+    numPools: 1, advanceCount: 0, timerEnabled: true, defaultMinutes: 15, status: "setup",
+    fixedPartners: true, requireMixedDoubles: false, groupWomensDoubles: false, catchUpLatecomers: true, levelNames: [], thirdPlaceMatch: false,
+    teams: [], players: [], courts: [], matches: [], createdAt: Date.now(),
+  };
+}
+function teamsById(t) { const m = {}; t.teams.forEach((x) => (m[x.id] = x)); return m; }
+
+function courtCompatible(court, match, tById, matchType) {
+  const t1 = tById[match.team1Id], t2 = tById[match.team2Id];
+  if (!t1 || !t2) return false;
+  if (court.matchType !== "any" && court.matchType !== matchType) return false;
+  if (court.genderRestriction !== "any" && (t1.gender !== court.genderRestriction || t2.gender !== court.genderRestriction)) return false;
+  if (court.levelRestriction && (t1.level !== court.levelRestriction || t2.level !== court.levelRestriction)) return false;
+  return true;
+}
+// Orders one time-slot's matches so pools take turns: every pool's first
+// match, then every pool's second match, and so on. Without this, handing
+// out courts in plain list order gives them all to pool 1 and leaves the
+// later pools with none.
+function interleaveByPool(matches, getPool, getIndex) {
+  const byPool = new Map();
+  for (const m of matches) {
+    const p = getPool(m);
+    if (!byPool.has(p)) byPool.set(p, []);
+    byPool.get(p).push(m);
+  }
+  const pools = [...byPool.keys()].sort((a, b) => a - b);
+  pools.forEach((p) => byPool.get(p).sort((a, b) => getIndex(a) - getIndex(b)));
+  const longest = Math.max(0, ...pools.map((p) => byPool.get(p).length));
+  const out = [];
+  for (let i = 0; i < longest; i++) {
+    for (const p of pools) { const m = byPool.get(p)[i]; if (m) out.push(m); }
+  }
+  return out;
+}
+
+// Plans a court for EVERY match in one time-slot (a round). If there are
+// more matches than courts, courts are reused — those matches simply play
+// one after another on that court. Each match gets the least-used court
+// its gender / level / singles-doubles restrictions allow, so load stays
+// even. `alreadyAssigned` holds courts of matches in this slot that already
+// have one (e.g. set by hand), counted as used. Returns a Map(matchId ->
+// courtId); matches no court can host are left out.
+function planCourtAssignments({ matches, courts, isCompatible, getPool, getIndex, alreadyAssigned = [] }) {
+  const load = new Map(courts.map((c) => [c.id, 0]));
+  for (const courtId of alreadyAssigned) if (load.has(courtId)) load.set(courtId, load.get(courtId) + 1);
+  const plan = new Map();
+  for (const m of interleaveByPool(matches, getPool, getIndex)) {
+    const options = courts.filter((c) => isCompatible(c, m));
+    if (options.length === 0) continue;
+    let best = options[0];
+    for (const c of options) if (load.get(c.id) < load.get(best.id)) best = c;
+    load.set(best.id, load.get(best.id) + 1);
+    plan.set(m.id, best.id);
+  }
+  return plan;
+}
+
+// Gives every match in each time-slot a court (pool-fair; courts are reused
+// in waves when a round has more matches than courts). Courts already set —
+// by hand or earlier — are kept; finished matches are left alone.
+function assignCourts(t, roundFilter) {
+  const tById = teamsById(t);
+  const slots = [...new Set(t.matches.filter(roundFilter).map((m) => m.stage + "|" + m.round))];
+  slots.forEach((slot) => {
+    const inSlot = t.matches.filter((m) => (m.stage + "|" + m.round) === slot && m.status !== "bye" && m.team1Id && m.team2Id);
+    const open = inSlot.filter((m) => !m.courtId && m.status !== "completed");
+    const plan = planCourtAssignments({
+      matches: open, courts: t.courts,
+      isCompatible: (c, m) => courtCompatible(c, m, tById, t.matchType),
+      getPool: (m) => m.pool || 1, getIndex: (m) => m.matchIndex,
+      alreadyAssigned: inSlot.filter((m) => m.courtId).map((m) => m.courtId),
+    });
+    open.forEach((m) => { if (plan.has(m.id)) m.courtId = plan.get(m.id); });
+  });
+}
+function missingCourtCount(t) {
+  return t.matches.filter((m) => !m.courtId && m.status !== "bye" && m.status !== "completed" && m.team1Id && m.team2Id).length;
+}
+// When a round has more matches than courts, several share a court and play
+// one after another. Returns that match's turn (null when the court is used
+// once that round).
+function courtTurn(t, m) {
+  if (!m.courtId) return null;
+  const slot = t.matches.filter((x) => x.stage === m.stage && x.round === m.round && x.status !== "bye" && x.team1Id && x.team2Id);
+  const order = interleaveByPool(slot, (x) => x.pool || 1, (x) => x.matchIndex);
+  const sameCourt = order.filter((x) => x.courtId === m.courtId);
+  if (sameCourt.length < 2) return null;
+  return { turn: sameCourt.findIndex((x) => x.id === m.id) + 1, of: sameCourt.length };
+}
+function ordinal(n) { return n + ["th", "st", "nd", "rd"][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10 < 4 ? n % 10 : 0]; }
+
+/* ============================================================
+   ACTIONS
+============================================================ */
+function createTournament(data) {
+  const t = newTournament();
+  Object.assign(t, data);
+  store.tournaments[t.id] = t;
+  saveStore();
+  ui.activeId = t.id; ui.screen = "detail"; ui.tab = "teams";
+  render();
+}
+function deleteTournament(id) {
+  if (!confirm("Delete this tournament? This can't be undone.")) return;
+  delete store.tournaments[id]; saveStore();
+  ui.screen = "list"; ui.activeId = null; render();
+}
+function updateTournament(t, updates) {
+  Object.assign(t, updates);
+  saveStore();
+  ui.screen = "detail";
+  render();
+}
+function addTeam(t, data) {
+  t.teams.push({ id: uid(), name: data.name, player1: data.player1, player2: data.player2 || null, gender: data.gender || null, level: data.level || null, pool: data.pool || 1, seed: null });
+  saveStore(); render();
+}
+function removeTeam(t, id) { t.teams = t.teams.filter((x) => x.id !== id); saveStore(); render(); }
+function autoAssignPools(t) {
+  const shuffled = [...t.teams].sort(() => Math.random() - .5);
+  shuffled.forEach((team, i) => { team.pool = (i % t.numPools) + 1; });
+  saveStore(); render();
+}
+function randomizeSeeding(t) {
+  const shuffled = [...t.teams].sort(() => Math.random() - .5);
+  shuffled.forEach((team, i) => { team.seed = i + 1; });
+  saveStore(); render();
+}
+function renderLevelsEditor(levelNames, ctx) {
+  let inner = `<div class="field-label">Skill levels (optional)</div>
+    <div class="helper">Define named levels (e.g. Beginner, Intermediate, Advanced) to pick from everywhere a level is set, instead of typing one freehand each time.</div>`;
+  if (levelNames.length > 0) {
+    inner += `<div style="display:flex; flex-wrap:wrap; gap:6px; margin:8px 0;">`;
+    levelNames.forEach((lvl) => {
+      inner += h`<span style="display:inline-flex; align-items:center; gap:4px; background:var(--chalk); border-radius:999px; padding:4px 10px; font-size:12px; font-weight:600;">
+        ${esc(lvl)}<button type="button" class="x-btn" style="padding:0; font-size:13px;" data-action="remove-level-${ctx}" data-level="${esc(lvl)}">&times;</button>
+      </span>`;
+    });
+    inner += `</div>`;
+  }
+  inner += `<div class="btn-row">
+    <input type="text" id="lvl-input-${ctx}" placeholder="e.g. Intermediate" />
+    <button type="button" class="btn btn-primary" style="width:44px; flex:0 0 44px;" data-action="add-level-${ctx}">+</button>
+  </div>`;
+  return `<div id="levels-editor-${ctx}">${inner}</div>`;
+}
+function refreshLevelsEditor(levelNames, ctx) {
+  const el = document.getElementById("levels-editor-" + ctx);
+  if (el) el.outerHTML = renderLevelsEditor(levelNames, ctx);
+}
+function levelOptionsOrInput(t, idBase, current) {
+  if (t.levelNames && t.levelNames.length > 0) {
+    return `<select id="${idBase}"><option value="">Level (opt.)</option>${t.levelNames.map((l) => `<option value="${esc(l)}"${l === current ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+  }
+  return `<input type="text" id="${idBase}" value="${esc(current || "")}" placeholder="Level (opt.)" />`;
+}
+
+function addCourt(t, data) {
+  if (ui.editingCourtId) {
+    const c = t.courts.find((x) => x.id === ui.editingCourtId);
+    Object.assign(c, data);
+    ui.editingCourtId = null;
+  } else {
+    t.courts.push({ id: uid(), ...data });
+  }
+  saveStore(); render();
+}
+function removeCourt(t, id) { t.courts = t.courts.filter((x) => x.id !== id); saveStore(); render(); }
+
+/* ---------- Open play player roster ---------- */
+function addPlayer(t, data) {
+  // Baseline = the lowest EFFECTIVE games (played + their own baseline) among
+  // active players right now — so a second latecomer isn't measured against
+  // the first one's 0 real games. Only used while catch-up is off, so a
+  // latecomer enters level with the pack instead of at 0.
+  const hist = buildOpenPlayHistory(t.matches, teamsById(t));
+  const peers = t.players.filter((p) => p.active);
+  const baseline = t.matches.length > 0 && peers.length > 0
+    ? Math.min.apply(null, peers.map((p) => (hist.gamesPlayed[p.id] || 0) + (p.joinBaseline || 0)))
+    : 0;
+  t.players.push({ id: uid(), name: data.name, gender: data.gender || null, level: data.level || null, active: true, joinBaseline: baseline });
+  saveStore(); render();
+}
+// Called when catch-up is switched OFF. Anyone who is currently 2+ games
+// behind the leader (e.g. latecomers part-way through catching up) has that
+// deficit forgiven, so from here on they just play the normal rotation —
+// without this, the baseline recorded at join would double-count games
+// they've since played and bench them.
+function forgiveCatchUpDeficits(t) {
+  const hist = buildOpenPlayHistory(t.matches, teamsById(t));
+  const active = t.players.filter((p) => p.active);
+  const maxG = Math.max(0, ...active.map((p) => hist.gamesPlayed[p.id] || 0));
+  active.forEach((p) => {
+    const deficit = maxG - (hist.gamesPlayed[p.id] || 0);
+    p.joinBaseline = deficit >= 2 ? deficit : 0;
+  });
+}
+function removePlayer(t, id) {
+  const p = t.players.find((x) => x.id === id);
+  if (p) p.active = false;
+  saveStore(); render();
+}
+
+// Generates `numRounds` more open-play rounds. Handles the first
+// generation, a latecomer added mid-session, and "generate more rounds"
+// after earlier ones finish — all identically, since history is rebuilt
+// fresh from the actual matches every time.
+function generateOpenPlayRounds(t, numMatchesRequested) {
+  const activePlayers = t.players.filter((p) => p.active);
+  const perMatch = t.matchType === "doubles" ? 4 : 2;
+  if (activePlayers.length < perMatch) return;
+
+  // The number entered is a total MATCH count, not a round count — 1
+  // means exactly 1 match gets created, however many courts exist.
+  // Courts only cap how many of those matches can run at the same
+  // time-slot (round); with no courts configured, the whole request
+  // fits in a single round.
+  const maxConcurrent = t.courts.length > 0 ? t.courts.length : Infinity;
+  const maxExistingRound = t.matches.length > 0 ? Math.max(...t.matches.map((m) => m.round)) : 0;
+  const playersById = Object.fromEntries(t.players.map((p) => [p.id, p]));
+  const genderById = Object.fromEntries(t.players.map((p) => [p.id, p.gender]));
+
+  let matchesRemaining = numMatchesRequested;
+  let roundOffset = 0;
+
+  while (matchesRemaining > 0) {
+    roundOffset += 1;
+    const roundNumber = maxExistingRound + roundOffset;
+    const tById = teamsById(t);
+    const history = buildOpenPlayHistory(t.matches, tById);
+
+    const catchUp = t.catchUpLatecomers !== false;
+    // With catch-up off, a latecomer is treated as if they'd already played
+    // as many games as the lowest player when they joined.
+    const effectiveGames = catchUp
+      ? history.gamesPlayed
+      : Object.fromEntries(t.players.map((p) => [p.id, (history.gamesPlayed[p.id] || 0) + (p.joinBaseline || 0)]));
+    const ranked = [...activePlayers].sort((a, b) => (effectiveGames[a.id] || 0) - (effectiveGames[b.id] || 0));
+    const slotsThisRound = Math.min(maxConcurrent, matchesRemaining);
+    const maxPossibleMatches = Math.floor(ranked.length / perMatch);
+    const matchesThisRound = Math.min(maxPossibleMatches, slotsThisRound);
+    if (matchesThisRound <= 0) break;
+
+    const activeCount = matchesThisRound * perMatch;
+    const genderMode = t.requireMixedDoubles ? "mixed" : t.groupWomensDoubles ? "grouped" : "none";
+    // Who plays and how they pair are decided together, so players tied on
+    // games played can be chosen to avoid repeat partners — without ever
+    // benching someone who has played fewer games.
+    const { matches: rawMatches } = generateBestOpenPlayRound({
+      rankedPlayers: ranked, activeCount, genderMode, matchType: t.matchType,
+      gamesPlayed: effectiveGames,
+      pastPartners: history.pastPartners, pastOpponents: history.pastOpponents,
+      genderById, requireMixedForWomen: !!t.requireMixedDoubles, groupWomensDoubles: !!t.groupWomensDoubles,
+      catchUp,
+    });
+    // Safety cap — generateOpenPlayRound should already produce at most
+    // matchesThisRound matches from a pool sized exactly for that, but
+    // never exceed what's actually still needed.
+    const roundMatches = rawMatches.slice(0, slotsThisRound);
+    if (roundMatches.length === 0) break;
+
+    roundMatches.forEach((rm, idx) => {
+      const teamIds = [rm.team1, rm.team2].map((side) => {
+        const p1 = playersById[side[0]], p2 = side[1] ? playersById[side[1]] : null;
+        const derivedGender = !p2 ? (p1 ? p1.gender : null) : (p1 && p1.gender && p2.gender ? (p1.gender === p2.gender ? p1.gender : "mixed") : null);
+        const derivedLevel = !p2 ? (p1 ? p1.level : null) : (p1 && p1.level && p1.level === p2.level ? p1.level : null);
+        const teamId = uid();
+        t.teams.push({
+          id: teamId, name: side.map((pid) => (playersById[pid] ? playersById[pid].name : "?")).join(" / "),
+          player1: p1 ? p1.name : "?", player2: p2 ? p2.name : null,
+          gender: derivedGender, level: derivedLevel, pool: 1, seed: null,
+          sourcePlayer1Id: side[0], sourcePlayer2Id: side[1] || null,
+        });
+        return teamId;
+      });
+      t.matches.push({
+        id: uid(), round: roundNumber, matchIndex: idx, pool: 1, stage: "group",
+        team1Id: teamIds[0], team2Id: teamIds[1], score1: null, score2: null, winnerId: null,
+        isTie: false, status: "scheduled", minutes: t.defaultMinutes, startedAt: null,
+        nextMatchId: null, nextSlot: null, courtId: null,
+      });
+    });
+
+    matchesRemaining -= roundMatches.length;
+  }
+
+  if (t.status === "setup") t.status = "in_progress";
+  assignCourts(t, (m) => m.round > maxExistingRound);
+  if (t.matches.length > 0 && (ui.tab === "teams" || ui.tab === "courts")) ui.tab = "matches";
+  saveStore(); render();
+}
+
+// Creates the 3rd place match (the two semifinal losers play each
+// other) and routes each semifinal's loser into it — separate from
+// nextMatchId/nextSlot, which only ever carries the winner. Skipped
+// when the bracket has no semifinal round (2 or fewer teams).
+function addThirdPlaceMatch(t, skeleton, byKey, stage) {
+  const maxRound = Math.max(...skeleton.map((m) => m.round));
+  if (maxRound < 2) return;
+  const semiRound = maxRound - 1;
+  const semiSkeletonMatches = skeleton.filter((m) => m.round === semiRound);
+  if (semiSkeletonMatches.length !== 2) return;
+  const semiIds = semiSkeletonMatches.map((m) => byKey[m.round + "-" + m.matchIndex]).filter(Boolean);
+  if (semiIds.length !== 2) return;
+
+  const thirdPlaceId = uid();
+  t.matches.push({
+    id: thirdPlaceId, round: maxRound, matchIndex: 1, pool: 1, stage, isThirdPlace: true,
+    team1Id: null, team2Id: null, score1: null, score2: null, winnerId: null,
+    isTie: false, status: "scheduled", minutes: t.defaultMinutes, startedAt: null,
+    nextMatchId: null, nextSlot: null, courtId: null,
+  });
+  semiIds.forEach((id, idx) => {
+    const m = t.matches.find((x) => x.id === id);
+    if (m) { m.loserNextMatchId = thirdPlaceId; m.loserNextSlot = idx + 1; }
+  });
+}
+
+function generateMatches(t) {
+  if (t.teams.length < 2) return;
+  let skeleton;
+  if (t.format === "round_robin") {
+    skeleton = [];
+    const poolCount = Math.max(1, t.numPools || 1);
+    for (let p = 1; p <= poolCount; p++) {
+      const ids = t.teams.filter((x) => (poolCount > 1 ? x.pool : 1) === p).map((x) => x.id);
+      if (ids.length < 2) continue;
+      generateRoundRobin(ids).forEach((m) => skeleton.push({ ...m, pool: p }));
+    }
+  } else {
+    const seeded = [...t.teams].sort((a, b) => (a.seed ?? Infinity) - (b.seed ?? Infinity)).map((x) => x.id);
+    skeleton = buildBracketSkeleton(seeded).map((m) => ({ ...m, pool: 1 }));
+  }
+  const byKey = {};
+  skeleton.forEach((m) => {
+    const id = uid();
+    byKey[m.round + "-" + m.matchIndex] = id;
+    t.matches.push({
+      id, round: m.round, matchIndex: m.matchIndex, pool: m.pool, stage: "group",
+      team1Id: m.team1, team2Id: m.team2, score1: null, score2: null, winnerId: m.isBye ? m.team1 : null,
+      isTie: false, status: m.isBye ? "bye" : "scheduled", minutes: t.defaultMinutes, startedAt: null,
+      nextMatchId: null, nextSlot: null, courtId: null,
+    });
+  });
+  if (t.format === "single_elim") {
+    const maxRound = Math.max(...skeleton.map((m) => m.round));
+    skeleton.forEach((m) => {
+      if (m.round === maxRound) return;
+      const selfId = byKey[m.round + "-" + m.matchIndex];
+      const parentId = byKey[(m.round + 1) + "-" + Math.floor(m.matchIndex / 2)];
+      const selfMatch = t.matches.find((x) => x.id === selfId);
+      if (selfMatch && parentId) { selfMatch.nextMatchId = parentId; selfMatch.nextSlot = (m.matchIndex % 2) + 1; }
+    });
+    skeleton.forEach((m) => {
+      if (m.round === 1 && m.isBye && m.team1) {
+        const parentId = byKey["2-" + Math.floor(m.matchIndex / 2)];
+        const parent = t.matches.find((x) => x.id === parentId);
+        if (parent) { if (m.matchIndex % 2 === 0) parent.team1Id = m.team1; else parent.team2Id = m.team1; }
+      }
+    });
+    if (t.thirdPlaceMatch) addThirdPlaceMatch(t, skeleton, byKey, "group");
+  }
+  t.status = "in_progress";
+  assignCourts(t, () => true);
+  if (t.matches.length > 0 && (ui.tab === "teams" || ui.tab === "courts")) ui.tab = "matches";
+  saveStore(); render();
+}
+function generatePlayoffs(t) {
+  if (!t.advanceCount) return;
+  const groupMatches = t.matches.filter((m) => m.stage === "group");
+  const standings = computeStandings(t.teams, groupMatches);
+  const poolCount = Math.max(1, t.numPools || 1);
+  const advancing = [];
+  for (let rank = 0; rank < t.advanceCount; rank++) {
+    for (let p = 1; p <= poolCount; p++) {
+      const poolStandings = poolCount > 1 ? standings.filter((s) => s.team.pool === p) : standings;
+      if (poolStandings[rank]) advancing.push(poolStandings[rank].team.id);
+    }
+  }
+  if (advancing.length < 2) return;
+  const skeleton = buildBracketSkeleton(advancing);
+  const byKey = {};
+  skeleton.forEach((m) => {
+    const id = uid();
+    byKey[m.round + "-" + m.matchIndex] = id;
+    t.matches.push({
+      id, round: m.round, matchIndex: m.matchIndex, pool: 1, stage: "playoff",
+      team1Id: m.team1, team2Id: m.team2, score1: null, score2: null, winnerId: m.isBye ? m.team1 : null,
+      isTie: false, status: m.isBye ? "bye" : "scheduled", minutes: t.defaultMinutes, startedAt: null,
+      nextMatchId: null, nextSlot: null, courtId: null,
+    });
+  });
+  const maxRound = Math.max(...skeleton.map((m) => m.round));
+  skeleton.forEach((m) => {
+    if (m.round === maxRound) return;
+    const selfId = byKey[m.round + "-" + m.matchIndex];
+    const parentId = byKey[(m.round + 1) + "-" + Math.floor(m.matchIndex / 2)];
+    const selfMatch = t.matches.find((x) => x.id === selfId);
+    if (selfMatch && parentId) { selfMatch.nextMatchId = parentId; selfMatch.nextSlot = (m.matchIndex % 2) + 1; }
+  });
+  skeleton.forEach((m) => {
+    if (m.round === 1 && m.isBye && m.team1) {
+      const parentId = byKey["2-" + Math.floor(m.matchIndex / 2)];
+      const parent = t.matches.find((x) => x.id === parentId);
+      if (parent) { if (m.matchIndex % 2 === 0) parent.team1Id = m.team1; else parent.team2Id = m.team1; }
+    }
+  });
+  if (t.thirdPlaceMatch) addThirdPlaceMatch(t, skeleton, byKey, "playoff");
+  assignCourts(t, (m) => m.stage === "playoff");
+  if (ui.tab === "teams" || ui.tab === "courts") ui.tab = "matches";
+  saveStore(); render();
+}
+function startMatch(t, m) { m.status = "in_progress"; m.startedAt = Date.now(); saveStore(); render(); }
+function submitResult(t, m, winnerChoice) {
+  const isBracket = t.format === "single_elim" || m.stage === "playoff";
+  let winnerId = null, isTie = false, s1 = null, s2 = null;
+  if (t.scoringMode === "score") {
+    const d = ui.scoreDrafts[m.id] || {};
+    s1 = Number(d.s1); s2 = Number(d.s2);
+    if (Number.isNaN(s1) || Number.isNaN(s2)) return;
+    if (s1 === s2) { if (isBracket) { alert("Bracket matches need a winner — scores can't tie."); return; } isTie = true; }
+    else winnerId = s1 > s2 ? m.team1Id : m.team2Id;
+  } else {
+    if (winnerChoice === "tie") { if (isBracket) { alert("Bracket matches need a winner — no ties allowed."); return; } isTie = true; }
+    else winnerId = winnerChoice === "team1" ? m.team1Id : m.team2Id;
+  }
+  m.score1 = s1; m.score2 = s2; m.winnerId = winnerId; m.isTie = isTie; m.status = "completed";
+  if (m.nextMatchId && winnerId) {
+    const next = t.matches.find((x) => x.id === m.nextMatchId);
+    if (next) { if (m.nextSlot === 1) next.team1Id = winnerId; else next.team2Id = winnerId; }
+  }
+  if (m.loserNextMatchId && winnerId) {
+    const loserId = winnerId === m.team1Id ? m.team2Id : m.team1Id;
+    if (loserId) {
+      const loserMatch = t.matches.find((x) => x.id === m.loserNextMatchId);
+      if (loserMatch) { if (m.loserNextSlot === 1) loserMatch.team1Id = loserId; else loserMatch.team2Id = loserId; }
+    }
+  }
+  ui.editingMatchId = null;
+  saveStore(); render();
+}
+function assignCourtManually(t, m, courtId) { m.courtId = courtId || null; saveStore(); render(); }
+
+// Open-play only: lets the host swap out a player in a specific
+// scheduled match (e.g. someone can't make that round) without
+// touching any other round. Only allowed before the match starts,
+// so it never rewrites a real result.
+function beginSwap(t, m, side) {
+  const teamId = side === "team1" ? m.team1Id : m.team2Id;
+  const team = t.teams.find((x) => x.id === teamId);
+  ui.swapDraft = { p1: (team && team.sourcePlayer1Id) || "", p2: (team && team.sourcePlayer2Id) || "" };
+  ui.swappingSide = { matchId: m.id, side };
+  render();
+}
+function saveSwap(t) {
+  const { matchId, side } = ui.swappingSide;
+  const m = t.matches.find((x) => x.id === matchId);
+  if (!m) return;
+  const teamId = side === "team1" ? m.team1Id : m.team2Id;
+  const team = t.teams.find((x) => x.id === teamId);
+  if (!team) return;
+  const playersById = Object.fromEntries(t.players.map((p) => [p.id, p]));
+  const p1 = ui.swapDraft.p1 ? playersById[ui.swapDraft.p1] : null;
+  const p2 = ui.swapDraft.p2 ? playersById[ui.swapDraft.p2] : null;
+  const derivedGender = !p2 ? (p1 ? p1.gender : null) : (p1 && p1.gender && p2.gender ? (p1.gender === p2.gender ? p1.gender : "mixed") : null);
+  const derivedLevel = !p2 ? (p1 ? p1.level : null) : (p1 && p1.level && p1.level === p2.level ? p1.level : null);
+  team.name = [p1 ? p1.name : "?", p2 ? p2.name : null].filter(Boolean).join(" / ");
+  team.player1 = p1 ? p1.name : "?";
+  team.player2 = p2 ? p2.name : null;
+  team.gender = derivedGender;
+  team.level = derivedLevel;
+  team.sourcePlayer1Id = ui.swapDraft.p1 || null;
+  team.sourcePlayer2Id = ui.swapDraft.p2 || null;
+  ui.swappingSide = null;
+  saveStore(); render();
+}
+
+/* ============================================================
+   RENDER
+============================================================ */
+function h(strings, ...vals) { return strings.reduce((acc, s, i) => acc + s + (vals[i] ?? ""), ""); }
+
+function renderHeader(t) {
+  if (!t) {
+    return h`<div class="header">
+      <div class="header-row"><div></div><div></div></div>
+      <h1 class="title">Event Squad</h1>
+      <div class="badge-offline">&#9679; Works with no internet</div>
+    </div>`;
+  }
+  return h`<div class="header">
+    <div class="header-row">
+      <button class="icon-btn" data-action="back-to-list">&larr;</button>
+      <div style="display:flex; gap:12px;">
+        <button class="icon-btn" data-action="print">Print</button>
+        ${ui.screen === "detail" ? `<button class="icon-btn" data-action="open-edit-settings">&#9998;</button>` : ""}
+      </div>
+    </div>
+    <h1 class="title">${esc(t.name)}</h1>
+    <div class="subtitle">${t.format === "round_robin" ? "Round robin" : "Single-elimination bracket"} &middot; ${t.matchType}</div>
+  </div>`;
+}
+
+function renderEditSettingsHeader(t) {
+  return h`<div class="header">
+    <div class="header-row">
+      <button class="icon-btn" data-action="cancel-edit-settings">&larr;</button>
+      <div></div>
+    </div>
+    <h1 class="title">Edit tournament</h1>
+    <div class="subtitle">${esc(t.name)}</div>
+  </div>`;
+}
+function renderEditSettings(t) {
+  const locked = t.status !== "setup";
+  const isOpenPlay = t.fixedPartners === false;
+  let out = h`<div class="field-label">Tournament name</div>
+    <input type="text" id="e-name" value="${esc(t.name)}" />
+    ${renderLevelsEditor(ui.editLevelNames, "edit")}
+    ${locked ? `<div class="helper">Format, match type, scoring, open play, and pools are locked once matches have been generated.</div>` : ""}
+    <div class="field-label">Format</div>
+    <select id="e-format" ${locked ? "disabled" : ""}>
+      <option value="round_robin"${t.format === "round_robin" ? " selected" : ""}>Round robin</option>
+      <option value="single_elim"${t.format === "single_elim" ? " selected" : ""}>Single-elimination bracket</option>
+    </select>
+    <div id="e-openplaywrap">
+      <label class="checkbox-label"><input type="checkbox" id="e-openplay" ${isOpenPlay ? "checked" : ""} ${locked ? "disabled" : ""} /> Open play — rotate partners/opponents each match</label>
+      <div id="e-mixedwrap" style="display:none;">
+        <label class="checkbox-label"><input type="checkbox" id="e-mixed" ${t.requireMixedDoubles ? "checked" : ""} /> Ensure mixed doubles whenever a woman is included</label>
+        <label class="checkbox-label"><input type="checkbox" id="e-groupwomen" ${t.groupWomensDoubles ? "checked" : ""} /> Group women's doubles — match women's pairs against each other</label>
+        <div class="helper">Can be changed any time. Applies to matches generated from now on — matches already generated keep their pairings.</div>
+      </div>
+    </div>
+    <div class="field-label">Match type</div>
+    <select id="e-matchtype" ${locked ? "disabled" : ""}>
+      <option value="doubles"${t.matchType === "doubles" ? " selected" : ""}>Doubles</option>
+      <option value="singles"${t.matchType === "singles" ? " selected" : ""}>Singles</option>
+    </select>
+    <div class="field-label">Scoring</div>
+    <select id="e-scoring" ${locked ? "disabled" : ""}>
+      <option value="score"${t.scoringMode === "score" ? " selected" : ""}>Track scores</option>
+      <option value="winloss"${t.scoringMode === "winloss" ? " selected" : ""}>Winner only</option>
+    </select>
+    <div id="e-poolswrap">
+      <div class="field-label">Pools</div>
+      <input type="number" id="e-pools" min="1" value="${t.numPools}" ${locked ? "disabled" : ""} />
+      <div class="field-label">Playoffs</div>
+      <select id="e-advance">
+        <option value="0"${t.advanceCount === 0 ? " selected" : ""}>No knockout stage</option>
+        <option value="1"${t.advanceCount === 1 ? " selected" : ""}>Top 1 per pool</option>
+        <option value="2"${t.advanceCount === 2 ? " selected" : ""}>Top 2 per pool</option>
+        <option value="3"${t.advanceCount === 3 ? " selected" : ""}>Top 3 per pool</option>
+        <option value="4"${t.advanceCount === 4 ? " selected" : ""}>Top 4 per pool</option>
+        <option value="5"${t.advanceCount === 5 ? " selected" : ""}>Top 5 per pool</option>
+      </select>
+    </div>
+    <div id="e-thirdwrap" style="display:none;">
+      <label class="checkbox-label"><input type="checkbox" id="e-third" ${t.thirdPlaceMatch ? "checked" : ""} ${(locked && t.format === "single_elim") ? "disabled" : ""} /> Include a 3rd place match</label>
+    </div>
+    <div id="e-catchupwrap" style="display:none;">
+      <label class="checkbox-label"><input type="checkbox" id="e-catchup" ${t.catchUpLatecomers !== false ? "checked" : ""} /> Catch up latecomers</label>
+      <div class="helper">On: players who join late get extra matches (others sit out more) until they match everyone else's games played. Off: latecomers join level with the lowest active player and just play the normal rotation. Can be changed any time.</div>
+    </div>
+    <label class="checkbox-label"><input type="checkbox" id="e-timer" ${t.timerEnabled ? "checked" : ""} /> Enable match countdown timer</label>
+    <div class="field-label">Default match length (minutes)</div>
+    <input type="number" id="e-minutes" min="1" value="${t.defaultMinutes}" />
+    <div class="btn-row" style="margin-top:18px;">
+      <button class="btn btn-outline" data-action="cancel-edit-settings">Cancel</button>
+      <button class="btn btn-primary" style="flex:2" data-action="save-edit-settings">Save changes</button>
+    </div>
+    <button class="btn btn-outline" style="margin-top:14px;" data-action="delete-tournament">Delete this tournament</button>`;
+  return out;
+}
+
+// Friends opening the shared link need to know the one step that makes it
+// work with no signal. Only shown when served over the web (not as a plain
+// file) and not already running as an installed app.
+function installHint() {
+  if (!/^https?:$/.test(location.protocol)) return "";
+  const installed = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+  if (installed) return "";
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const how = ios ? "Tap the Share button, then \u201cAdd to Home Screen\u201d." : "Open the browser menu (\u22EE), then \u201cInstall app\u201d or \u201cAdd to Home screen\u201d.";
+  return `<div class="card" style="margin-top:14px; border-style:dashed;">
+    <div class="name">Want to use it with no signal?</div>
+    <div class="sub" style="line-height:1.5; margin-top:4px;">${how} Then open it once from that icon while you still have internet — after that it works anywhere.</div>
+  </div>`;
+}
+function renderList() {
+  const list = Object.values(store.tournaments).sort((a, b) => b.createdAt - a.createdAt);
+  let body = "";
+  if (list.length === 0) {
+    body += `<div class="empty">No tournaments saved on this device yet.</div>`;
+  } else {
+    list.forEach((t) => {
+      body += h`<div class="card" data-action="open" data-id="${t.id}" style="cursor:pointer">
+        <div class="name">${esc(t.name)}</div>
+        <div class="sub">${t.format === "round_robin" ? "Round robin" : "Bracket"} &middot; ${t.matchType} &middot; ${t.status.replace("_", " ")}</div>
+      </div>`;
+    });
+  }
+  body += `<button class="btn btn-primary" data-action="show-new-form" style="margin-top:12px;">+ New tournament</button>`;
+  body += `<div class="btn-row" style="margin-top:8px;">
+    <button class="btn btn-outline" data-action="export">Export backup</button>
+    <label class="btn btn-outline" style="text-align:center;">
+      Import backup<input type="file" id="importFile" accept="application/json" style="display:none" />
+    </label>
+  </div>`;
+  body += installHint();
+  if (ui.showNewForm) {
+    body += h`<div class="card" style="margin-top:14px;">
+      <div class="field-label">Tournament name</div>
+      <input type="text" id="f-name" value="Tournament" />
+      ${renderLevelsEditor(ui.newLevelNames, "new")}
+      <div class="field-label">Format</div>
+      <select id="f-format"><option value="round_robin">Round robin</option><option value="single_elim">Single-elimination bracket</option></select>
+      <div class="field-label">Match type</div>
+      <select id="f-matchtype"><option value="doubles">Doubles</option><option value="singles">Singles</option></select>
+      <div class="field-label">Scoring</div>
+      <select id="f-scoring"><option value="score">Track scores</option><option value="winloss">Winner only</option></select>
+      <div id="f-openplaywrap">
+        <label class="checkbox-label"><input type="checkbox" id="f-openplay" /> Open play — rotate partners/opponents each match</label>
+        <div class="helper">No fixed teams. Add individual players; every match pairs people up fresh so everyone gets a chance to partner with — and play against — everyone else.</div>
+        <div id="f-mixedwrap" style="display:none;">
+          <label class="checkbox-label"><input type="checkbox" id="f-mixed" /> Ensure mixed doubles whenever a woman is included</label>
+          <label class="checkbox-label"><input type="checkbox" id="f-groupwomen" /> Group women's doubles — match women's pairs against each other</label>
+        </div>
+      </div>
+      <div id="f-poolswrap">
+        <div class="field-label">Pools</div>
+        <input type="number" id="f-pools" min="1" value="1" />
+        <div class="field-label">Playoffs</div>
+        <select id="f-advance">
+          <option value="0">No knockout stage</option>
+          <option value="1">Top 1 per pool</option><option value="2">Top 2 per pool</option>
+          <option value="3">Top 3 per pool</option><option value="4">Top 4 per pool</option><option value="5">Top 5 per pool</option>
+        </select>
+      </div>
+      <div id="f-thirdwrap" style="display:none;">
+        <label class="checkbox-label"><input type="checkbox" id="f-third" /> Include a 3rd place match</label>
+      </div>
+      <div id="f-catchupwrap" style="display:none;">
+        <label class="checkbox-label"><input type="checkbox" id="f-catchup" checked /> Catch up latecomers</label>
+        <div class="helper">On: players who join late get extra matches (others sit out more) until they match everyone else's games played. Off: latecomers join level with the lowest active player and just play the normal rotation.</div>
+      </div>
+      <label class="checkbox-label"><input type="checkbox" id="f-timer" checked /> Enable match countdown timer</label>
+      <div class="field-label">Default match length (minutes)</div>
+      <input type="number" id="f-minutes" min="1" value="15" />
+      <div class="btn-row" style="margin-top:14px;">
+        <button class="btn btn-outline" data-action="cancel-new-form">Cancel</button>
+        <button class="btn btn-primary" data-action="submit-new-form" style="flex:2">Create</button>
+      </div>
+    </div>`;
+  }
+  return body;
+}
+
+function renderTeamsTab(t) {
+  const perMatch = t.matchType === "doubles" ? 2 : 1;
+  let out = "";
+  if (t.status === "setup") {
+    out += h`<div class="card">
+      <div class="field-label">Player 1</div><input type="text" id="tm-p1" />
+      ${perMatch === 2 ? `<div class="field-label">Player 2</div><input type="text" id="tm-p2" />` : ""}
+      <div class="field-label">Team name (optional)</div><input type="text" id="tm-name" />
+      <div class="btn-row" style="gap:8px; margin-top:10px;">
+        <select id="tm-gender" style="flex:1"><option value="">Gender (opt.)</option><option value="men">Men</option><option value="women">Women</option><option value="mixed">Mixed</option></select>
+        <div style="flex:1">${levelOptionsOrInput(t, "tm-level", "")}</div>
+      </div>
+      ${t.numPools > 1 ? `<div class="field-label">Pool</div><select id="tm-pool">${Array.from({ length: t.numPools }, (_, i) => i + 1).map((p) => `<option value="${p}">Pool ${p}</option>`).join("")}</select>` : ""}
+      <button class="btn btn-primary" data-action="add-team" style="margin-top:10px;">+ Add team</button>
+    </div>`;
+  }
+  const groups = t.numPools > 1 ? [...new Set(t.teams.map((x) => x.pool))].sort((a, b) => a - b) : [null];
+  groups.forEach((pool) => {
+    if (pool !== null) out += `<div class="pool-header">Pool ${pool} &middot; ${t.teams.filter((x) => x.pool === pool).length}</div>`;
+    t.teams.filter((x) => pool === null || x.pool === pool).forEach((team) => {
+      out += h`<div class="card row-between">
+        <div><div class="name">${esc(team.name)}</div>
+          <div class="sub">${[t.format === "single_elim" && team.seed ? "Seed " + team.seed : null, team.gender, team.level].filter(Boolean).map(esc).join(" &middot; ") || "No gender/level set"}</div>
+        </div>
+        ${t.status === "setup" ? `<button class="x-btn" data-action="remove-team" data-id="${team.id}">&times;</button>` : ""}
+      </div>`;
+    });
+  });
+  if (t.status === "setup") {
+    if (t.format === "round_robin" && t.numPools > 1 && t.teams.length >= 2) out += `<button class="btn btn-primary" data-action="auto-assign-pools" style="margin-top:10px;">Auto-assign pools</button>`;
+    if (t.format === "single_elim" && t.teams.length >= 2) out += `<button class="btn btn-primary" data-action="randomize-seeding" style="margin-top:10px;">Randomize seeding</button>`;
+    if (t.teams.length >= 2) out += `<button class="btn btn-accent" data-action="generate-matches" style="margin-top:10px;">Generate ${t.format === "round_robin" ? "round robin" : "bracket"}</button>`;
+    else out += `<div class="helper">Add at least 2 teams to generate matches.</div>`;
+  } else {
+    out += `<div class="helper" style="margin-top:10px;">Matches already generated — roster is locked. See Matches tab.</div>`;
+  }
+  return out;
+}
+
+function renderPlayersTab(t) {
+  let out = h`<div class="card">
+    <div class="field-label">Player name</div><input type="text" id="pl-name" />
+    <div class="btn-row" style="gap:8px; margin-top:10px;">
+      <select id="pl-gender" style="flex:1"><option value="">Gender (opt.)</option><option value="men">Men</option><option value="women">Women</option></select>
+      <div style="flex:1">${levelOptionsOrInput(t, "pl-level", "")}</div>
+    </div>
+    <button class="btn btn-primary" data-action="add-player" style="margin-top:10px;">+ Add player</button>
+    <div class="helper">Add players anytime, even mid-session — a latecomer gets automatically prioritized in future matches until their game count catches up.</div>
+  </div>`;
+  t.players.forEach((p) => {
+    out += h`<div class="card row-between" style="${p.active ? "" : "opacity:.5"}">
+      <div><div class="name">${esc(p.name)}${!p.active ? " (removed)" : ""}</div>
+        <div class="sub">${[p.gender, p.level].filter(Boolean).map(esc).join(" &middot; ") || "No gender/level set"}</div>
+      </div>
+      ${p.active ? `<button class="x-btn" data-action="remove-player" data-id="${p.id}">&times;</button>` : ""}
+    </div>`;
+  });
+  const activeCount = t.players.filter((p) => p.active).length;
+  const minNeeded = t.matchType === "doubles" ? 4 : 2;
+  out += h`<div class="card" style="margin-top:14px;">
+    <div class="field-label">${t.matches.length > 0 ? "Generate more matches" : "Generate matches"}</div>
+    <div class="btn-row">
+      <input type="number" id="pl-rounds" min="1" value="1" style="flex:1" />
+      <button class="btn btn-accent" data-action="generate-openplay-rounds" style="flex:0 0 90px;" ${activeCount < minNeeded ? "disabled" : ""}>Generate</button>
+    </div>
+    ${activeCount < minNeeded ? `<div class="helper">Need at least ${minNeeded} active players to generate a match.</div>` : ""}
+  </div>`;
+  return out;
+}
+
+function renderCourtsTab(t) {
+  const editingCourt = ui.editingCourtId ? t.courts.find((c) => c.id === ui.editingCourtId) : null;
+  let out = "";
+  out += h`<div class="card">
+    <div class="field-label">${ui.editingCourtId ? "Edit court" : "Court label"}</div><input type="text" id="ct-label" value="${ui.editingCourtId ? esc(t.courts.find((c) => c.id === ui.editingCourtId).label) : ""}" />
+    <div class="btn-row" style="gap:8px; margin-top:10px;">
+      <select id="ct-gender" style="flex:1">
+        <option value="any"${(!editingCourt || editingCourt.genderRestriction === "any") ? " selected" : ""}>Any gender</option>
+        <option value="men"${editingCourt && editingCourt.genderRestriction === "men" ? " selected" : ""}>Men only</option>
+        <option value="women"${editingCourt && editingCourt.genderRestriction === "women" ? " selected" : ""}>Women only</option>
+        <option value="mixed"${editingCourt && editingCourt.genderRestriction === "mixed" ? " selected" : ""}>Mixed only</option>
+      </select>
+      <select id="ct-matchtype" style="flex:1">
+        <option value="any"${(!editingCourt || editingCourt.matchType === "any") ? " selected" : ""}>Singles/doubles</option>
+        <option value="singles"${editingCourt && editingCourt.matchType === "singles" ? " selected" : ""}>Singles only</option>
+        <option value="doubles"${editingCourt && editingCourt.matchType === "doubles" ? " selected" : ""}>Doubles only</option>
+      </select>
+    </div>
+    <div style="margin-top:10px;">${levelOptionsOrInput(t, "ct-level", editingCourt ? editingCourt.levelRestriction : "")}</div>
+    <div class="btn-row" style="margin-top:10px;">
+      ${ui.editingCourtId ? `<button class="btn btn-outline" data-action="cancel-court-edit">Cancel</button>` : ""}
+      <button class="btn btn-primary" data-action="add-court" style="flex:${ui.editingCourtId ? 2 : 1}">${ui.editingCourtId ? "Save changes" : "+ Add court"}</button>
+    </div>
+  </div>`;
+  if (t.courts.length === 0) out += `<div class="helper">No courts added — matches will need manual court assignment.</div>`;
+  t.courts.forEach((c) => {
+    out += h`<div class="card row-between">
+      <div><div class="name">${esc(c.label)}</div>
+        <div class="sub">${c.genderRestriction !== "any" ? c.genderRestriction : "any gender"} &middot; ${c.matchType !== "any" ? c.matchType : "singles/doubles"}${c.levelRestriction ? " &middot; " + esc(c.levelRestriction) : ""}</div>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <button class="x-btn" style="color:var(--fade)" data-action="edit-court" data-id="${c.id}">&#9998;</button>
+        <button class="x-btn" data-action="remove-court" data-id="${c.id}">&times;</button>
+      </div>
+    </div>`;
+  });
+  return out;
+}
+
+function timerBadge(m) {
+  if (m.status !== "in_progress" || !m.startedAt) return "";
+  const remaining = Math.round((m.minutes * 60) - (Date.now() - m.startedAt) / 1000);
+  const expired = remaining <= 0, abs = Math.abs(remaining);
+  const mm = String(Math.floor(abs / 60)).padStart(2, "0"), ss = String(abs % 60).padStart(2, "0");
+  return `<span class="timer-badge${expired ? " expired" : ""}">${expired ? "-" : ""}${mm}:${ss}</span>`;
+}
+
+function renderMatchCard(t, m, matchNumber) {
+  const tById = teamsById(t);
+  const t1 = m.team1Id ? tById[m.team1Id] : null, t2 = m.team2Id ? tById[m.team2Id] : null;
+  if (m.status === "bye") {
+    return `<div class="match-card"><div class="match-teams"><div class="team-name winner">${esc(t1 ? t1.name : "TBD")}</div><div class="vs">BYE</div></div></div>`;
+  }
+  const canSwap = t.fixedPartners === false && m.status === "scheduled";
+  const activePlayers = t.players.filter((p) => p.active);
+
+  function renderTeamSide(team, side, align) {
+    const isSwapping = ui.swappingSide && ui.swappingSide.matchId === m.id && ui.swappingSide.side === side;
+    if (isSwapping) {
+      const otherTeamId = side === "team1" ? m.team2Id : m.team1Id;
+      const otherTeam = otherTeamId ? tById[otherTeamId] : null;
+      const otherSideIds = otherTeam ? [otherTeam.sourcePlayer1Id, otherTeam.sourcePlayer2Id].filter(Boolean) : [];
+      const slots = t.matchType === "doubles" ? ["p1", "p2"] : ["p1"];
+      let out = `<div style="flex:1; text-align:${align};">`;
+      slots.forEach((slot) => {
+        const otherSlot = slot === "p1" ? "p2" : "p1";
+        const excluded = new Set([...otherSideIds, ui.swapDraft[otherSlot]].filter(Boolean));
+        out += h`<select data-role="swap-${slot}" style="font-size:11px; margin-bottom:3px; width:100%; border:1px solid var(--line); border-radius:6px; padding:2px 4px;">
+          <option value="">— none —</option>
+          ${activePlayers.filter((p) => !excluded.has(p.id)).map((p) => `<option value="${p.id}"${p.id === ui.swapDraft[slot] ? " selected" : ""}>${esc(p.name)}</option>`).join("")}
+        </select>`;
+      });
+      out += `<div style="display:flex; gap:4px; margin-top:2px; justify-content:${align === "right" ? "flex-end" : "flex-start"};">
+        <button class="x-btn" style="color:var(--green); font-size:14px;" data-action="save-swap">&#10003;</button>
+        <button class="x-btn" style="color:var(--fade); font-size:14px;" data-action="cancel-swap">&times;</button>
+      </div></div>`;
+      return out;
+    }
+    const winnerClass = (side === "team1" ? m.winnerId === m.team1Id : m.winnerId === m.team2Id) ? " winner" : "";
+    return h`<div class="team-name${side === "team2" ? " right" : ""}${winnerClass}">
+      ${esc(team ? team.name : "TBD")}
+      ${canSwap ? `<button class="x-btn" style="color:var(--fade); font-size:11px; padding:0 0 0 4px;" data-action="begin-swap" data-id="${m.id}" data-side="${side}">&#9998;</button>` : ""}
+    </div>`;
+  }
+
+  const isBracket = t.format === "single_elim" || m.stage === "playoff";
+  const editing = ui.editingMatchId === m.id;
+  let controls = "";
+  if (m.status === "completed") {
+    controls = `<div class="result-line">${m.isTie ? "Tied" : t.scoringMode === "score" ? esc(m.score1) + " \u2013 " + esc(m.score2) : "Final"}
+      <button class="x-btn" style="color:var(--green); font-size:11px;" data-action="edit-match" data-id="${m.id}">Edit</button></div>`;
+  }
+  if (m.status !== "completed" || editing) {
+    if (m.status === "scheduled") controls += `<button class="btn btn-primary" style="margin-top:8px;" data-action="start-match" data-id="${m.id}">&#9654; Start match</button>`;
+    if ((m.status === "in_progress" || editing) && t.scoringMode === "score") {
+      const d = ui.scoreDrafts[m.id] || {};
+      controls += h`<div class="score-row">
+        <input type="number" data-role="s1" data-id="${m.id}" value="${d.s1 ?? ""}" placeholder="0" />
+        <span style="font-size:11px;color:var(--fade)">vs</span>
+        <input type="number" data-role="s2" data-id="${m.id}" value="${d.s2 ?? ""}" placeholder="0" />
+        <button class="btn btn-primary" style="width:38px; flex:0 0 38px; padding:8px 0;" data-action="submit-score" data-id="${m.id}">&#10003;</button>
+      </div>`;
+    }
+    if ((m.status === "in_progress" || editing) && t.scoringMode === "winloss") {
+      controls += `<div class="wl-row">
+        <button class="btn btn-primary" data-action="submit-wl" data-id="${m.id}" data-winner="team1">${esc(t1 ? t1.name : "Team 1")} won</button>
+        <button class="btn btn-primary" data-action="submit-wl" data-id="${m.id}" data-winner="team2">${esc(t2 ? t2.name : "Team 2")} won</button>
+        ${!isBracket ? `<button class="btn btn-outline" data-action="submit-wl" data-id="${m.id}" data-winner="tie">Tie</button>` : ""}
+      </div>`;
+    }
+  }
+  const courtOptions = t.courts.map((c) => `<option value="${c.id}"${c.id === m.courtId ? " selected" : ""}>${esc(c.label)}</option>`).join("");
+  return h`<div class="match-card">
+    ${m.isThirdPlace ? `<div style="font-size:10px; font-weight:700; color:var(--citrus); text-transform:uppercase; letter-spacing:.3px; margin-bottom:6px;">3rd Place Match</div>` : matchNumber != null ? `<div style="font-size:10px; font-weight:700; color:var(--fade); text-transform:uppercase; letter-spacing:.3px; margin-bottom:6px;">Match ${matchNumber}</div>` : ""}
+    <div class="match-teams">
+      ${renderTeamSide(t1, "team1", "left")}
+      <div class="vs">vs</div>
+      ${renderTeamSide(t2, "team2", "right")}
+    </div>
+    ${controls}
+    <div class="meta-row">
+      <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <select class="court-select" data-action="set-court" data-id="${m.id}"><option value="">No court</option>${courtOptions}</select>
+        ${(() => { const turn = courtTurn(t, m); return turn ? `<span>${ordinal(turn.turn)} of ${turn.of} on this court</span>` : ""; })()}
+      </div>
+      ${t.timerEnabled ? timerBadge(m) : ""}
+    </div>
+  </div>`;
+}
+
+function renderMatchesTab(t) {
+  let out = "";
+  const missing = t.courts.length > 0 ? missingCourtCount(t) : 0;
+  if (missing > 0) {
+    out += `<button class="btn btn-accent" data-action="auto-assign-courts">Auto-assign courts (${missing} without one)</button>
+      <div class="helper" style="margin-bottom:10px;">Matches in a round that outnumber your courts share them and play one after another. Courts you picked by hand are kept.</div>`;
+  }
+  const groupMatches = t.matches.filter((m) => m.stage === "group");
+  const playoffMatches = t.matches.filter((m) => m.stage === "playoff");
+  const pools = t.numPools > 1 ? [...new Set(groupMatches.map((m) => m.pool))].sort((a, b) => a - b) : [1];
+  pools.forEach((pool) => {
+    const pm = t.numPools > 1 ? groupMatches.filter((m) => m.pool === pool) : groupMatches;
+    if (t.numPools > 1) out += `<div class="pool-header">Pool ${pool}</div>`;
+    if (t.fixedPartners === false) {
+      // Open play: no "Round" grouping headers — just every match, in
+      // order, numbered sequentially.
+      const sorted = [...pm].sort((a, b) => a.round - b.round || a.matchIndex - b.matchIndex);
+      sorted.forEach((m, idx) => { out += renderMatchCard(t, m, idx + 1); });
+      return;
+    }
+    const rounds = [...new Set(pm.map((m) => m.round))].sort((a, b) => a - b);
+    const totalR = Math.max(...rounds, 1);
+    rounds.forEach((r) => {
+      out += `<div class="section-title">${t.format === "round_robin" ? "Round " + r : roundLabel(r, totalR)}</div>`;
+      pm.filter((m) => m.round === r).sort((a, b) => a.matchIndex - b.matchIndex).forEach((m) => { out += renderMatchCard(t, m); });
+    });
+  });
+  if (t.format === "round_robin" && t.advanceCount > 0) {
+    const allDone = groupMatches.length > 0 && groupMatches.every((m) => m.status === "completed" || m.status === "bye");
+    if (playoffMatches.length === 0) {
+      out += allDone
+        ? `<button class="btn btn-accent" style="margin-top:14px;" data-action="generate-playoffs">Generate playoffs</button>`
+        : `<div class="helper" style="margin-top:14px;">Playoffs available once every pool finishes round robin play.</div>`;
+    } else {
+      const rounds = [...new Set(playoffMatches.map((m) => m.round))].sort((a, b) => a - b);
+      const totalR = Math.max(...rounds);
+      out += `<div class="pool-header">Playoffs</div>`;
+      rounds.forEach((r) => {
+        out += `<div class="section-title">${roundLabel(r, totalR)}</div>`;
+        playoffMatches.filter((m) => m.round === r).sort((a, b) => a.matchIndex - b.matchIndex).forEach((m) => { out += renderMatchCard(t, m); });
+      });
+    }
+  }
+  if (t.matches.length === 0) out = `<div class="empty">No matches generated yet.</div>`;
+  return out;
+}
+
+function renderStandingsTab(t) {
+  let out = "";
+  const groupMatches = t.matches.filter((m) => m.stage === "group");
+  const playoffMatches = t.matches.filter((m) => m.stage === "playoff");
+  const bracketMatches = t.format === "single_elim" ? groupMatches : playoffMatches;
+  if (bracketMatches.length > 0) {
+    const rounds = [...new Set(bracketMatches.map((m) => m.round))].sort((a, b) => a - b);
+    const totalR = Math.max(...rounds);
+    const finalRound = Math.max(...rounds);
+    const finalMatch = bracketMatches.find((m) => m.round === finalRound && !m.isThirdPlace && m.status === "completed");
+    if (finalMatch && finalMatch.winnerId) {
+      const champ = teamsById(t)[finalMatch.winnerId];
+      out += `<div class="champion-banner">&#127942; CHAMPION<div class="name">${esc(champ ? champ.name : "")}</div></div>`;
+    }
+    out += `<div class="pool-header">${t.format === "single_elim" ? "Bracket results" : "Playoff results"}</div>`;
+    rounds.forEach((r) => {
+      out += `<div class="section-title">${roundLabel(r, totalR)}</div>`;
+      [...bracketMatches.filter((m) => m.round === r)].sort((a, b) => a.matchIndex - b.matchIndex).forEach((m) => {
+        const tById = teamsById(t);
+        const t1 = m.team1Id ? tById[m.team1Id] : null, t2 = m.team2Id ? tById[m.team2Id] : null;
+        if (m.status === "bye") { out += `<div style="font-size:12px;padding:4px 0;"><strong>${esc(t1 ? t1.name : "TBD")}</strong> — bye</div>`; return; }
+        if (m.isThirdPlace) out += `<div style="font-size:10px; font-weight:700; color:var(--citrus); text-transform:uppercase; margin:4px 0 2px;">3rd Place Match</div>`;
+        out += h`<div class="row-between" style="font-size:12px; padding:5px 0; border-bottom:1px solid var(--line);">
+          <div><span style="font-weight:${m.winnerId === m.team1Id ? 700 : 400}; color:${m.winnerId === m.team1Id ? "var(--green)" : "inherit"}">${esc(t1 ? t1.name : "TBD")}</span> vs
+          <span style="font-weight:${m.winnerId === m.team2Id ? 700 : 400}; color:${m.winnerId === m.team2Id ? "var(--green)" : "inherit"}">${esc(t2 ? t2.name : "TBD")}</span></div>
+          <div style="color:var(--fade)">${m.status === "completed" ? (t.scoringMode === "score" ? esc(m.score1) + "\u2013" + esc(m.score2) : "Final") : "Pending"}</div>
+        </div>`;
+      });
+    });
+  }
+  if (t.fixedPartners === false) {
+    const tById = teamsById(t);
+    const standings = computePlayerStandings(t.players, groupMatches, tById);
+    out += `<table class="standings"><thead><tr><th>Player</th><th>GP</th><th>W</th><th>L</th><th>T</th><th>Win%</th><th>+/-</th><th>Tiebreak</th></tr></thead><tbody>`;
+    standings.forEach((s) => {
+      out += `<tr style="${s.player.active ? "" : "opacity:.5"}"><td>${esc(s.player.name)}${!s.player.active ? " (removed)" : ""}</td><td>${s.played}</td><td>${s.wins}</td><td>${s.losses}</td><td>${s.ties}</td><td>${Math.round(s.winPct * 100)}%</td><td>${s.pointDiff > 0 ? "+" : ""}${s.pointDiff}</td><td style="font-size:9px;color:var(--fade)">${esc(s.tiebreak) || "\u2014"}</td></tr>`;
+    });
+    out += `</tbody></table>`;
+    return out || `<div class="empty">No standings yet.</div>`;
+  }
+  const pools = t.numPools > 1 ? [...new Set(t.teams.map((x) => x.pool))].sort((a, b) => a - b) : [null];
+  pools.forEach((pool) => {
+    if (pool !== null) out += `<div class="pool-header">Pool ${pool}</div>`;
+    const standings = computeStandings(t.teams, groupMatches).filter((s) => pool === null || s.team.pool === pool);
+    out += `<table class="standings"><thead><tr><th>Team</th><th>GP</th><th>W</th><th>L</th><th>T</th><th>Win%</th><th>+/-</th><th>Tiebreak</th></tr></thead><tbody>`;
+    standings.forEach((s) => {
+      out += `<tr><td>${esc(s.team.name)}</td><td>${s.played}</td><td>${s.wins}</td><td>${s.losses}</td><td>${s.ties}</td><td>${Math.round(s.winPct * 100)}%</td><td>${s.pointDiff > 0 ? "+" : ""}${s.pointDiff}</td><td style="font-size:9px;color:var(--fade)">${esc(s.tiebreak) || "\u2014"}</td></tr>`;
+    });
+    out += `</tbody></table>`;
+  });
+  return out || `<div class="empty">No standings yet.</div>`;
+}
+
+function renderDetail(t) {
+  const isOpenPlay = t.fixedPartners === false;
+  let out = `<div class="tabs">
+    <button class="tab${ui.tab === "teams" ? " active" : ""}" data-action="set-tab" data-tab="teams">${isOpenPlay ? "Players" : "Teams"} &middot; ${isOpenPlay ? t.players.filter((p) => p.active).length : t.teams.length}</button>
+    <button class="tab${ui.tab === "courts" ? " active" : ""}" data-action="set-tab" data-tab="courts">Courts &middot; ${t.courts.length}</button>
+    <button class="tab${ui.tab === "matches" ? " active" : ""}" data-action="set-tab" data-tab="matches">Matches</button>
+    <button class="tab${ui.tab === "standings" ? " active" : ""}" data-action="set-tab" data-tab="standings">Standings</button>
+  </div><div class="body">`;
+  if (ui.tab === "teams") out += isOpenPlay ? renderPlayersTab(t) : renderTeamsTab(t);
+  if (ui.tab === "courts") out += renderCourtsTab(t);
+  if (ui.tab === "matches") out += renderMatchesTab(t);
+  if (ui.tab === "standings") out += renderStandingsTab(t);
+  out += `</div>`;
+  return out;
+}
+
+function render() {
+  const t = (ui.screen === "detail" || ui.screen === "editSettings") ? activeT() : null;
+  let html = "";
+  if (ui.screen === "list") {
+    html += renderHeader(null) + `<div class="body">${renderList()}</div>`;
+  } else if (ui.screen === "editSettings" && t) {
+    html += renderEditSettingsHeader(t) + `<div class="body">${renderEditSettings(t)}</div>`;
+  } else if (t) {
+    html += renderHeader(t) + renderDetail(t);
+  } else {
+    ui.screen = "list"; render(); return;
+  }
+  html += `<div class="footer-note">Offline mode &middot; data saved only on this device</div>`;
+  document.getElementById("app").innerHTML = html;
+  wireImportInput();
+  wireSetupFormToggles();
+}
+
+/* ============================================================
+   EVENTS — one delegated listener, no per-element handlers
+============================================================ */
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-action]");
+  if (!el) return;
+  const action = el.dataset.action;
+  const t = ui.activeId ? activeT() : null;
+
+  if (action === "show-new-form") { ui.showNewForm = true; ui.newLevelNames = []; render(); }
+  else if (action === "cancel-new-form") { ui.showNewForm = false; render(); }
+  else if (action === "add-level-new") {
+    const inp = document.getElementById("lvl-input-new");
+    const v = inp.value.trim();
+    if (v && !ui.newLevelNames.includes(v)) { ui.newLevelNames.push(v); refreshLevelsEditor(ui.newLevelNames, "new"); }
+    else inp.value = "";
+  }
+  else if (action === "remove-level-new") {
+    ui.newLevelNames = ui.newLevelNames.filter((l) => l !== el.dataset.level);
+    refreshLevelsEditor(ui.newLevelNames, "new");
+  }
+  else if (action === "submit-new-form") {
+    const format = document.getElementById("f-format").value;
+    const matchType = document.getElementById("f-matchtype").value;
+    const openPlay = format === "round_robin" && document.getElementById("f-openplay").checked;
+    const data = {
+      name: document.getElementById("f-name").value.trim() || "Tournament",
+      format, matchType,
+      scoringMode: document.getElementById("f-scoring").value,
+      fixedPartners: !openPlay,
+      requireMixedDoubles: openPlay && matchType === "doubles" && document.getElementById("f-mixed").checked && !document.getElementById("f-groupwomen").checked,
+      groupWomensDoubles: openPlay && matchType === "doubles" && document.getElementById("f-groupwomen").checked,
+      numPools: (format === "round_robin" && !openPlay) ? Math.max(1, Number(document.getElementById("f-pools").value) || 1) : 1,
+      advanceCount: (format === "round_robin" && !openPlay) ? Number(document.getElementById("f-advance").value) || 0 : 0,
+      timerEnabled: document.getElementById("f-timer").checked,
+      defaultMinutes: Number(document.getElementById("f-minutes").value) || 15,
+      levelNames: [...ui.newLevelNames],
+      thirdPlaceMatch: (format === "single_elim" || (format === "round_robin" && !openPlay && Number(document.getElementById("f-advance").value) >= 1)) && document.getElementById("f-third").checked,
+      catchUpLatecomers: document.getElementById("f-catchup").checked,
+    };
+    ui.showNewForm = false;
+    createTournament(data);
+  }
+  else if (action === "open") { ui.activeId = el.dataset.id; ui.screen = "detail"; ui.tab = "teams"; render(); }
+  else if (action === "back-to-list") { ui.screen = "list"; ui.activeId = null; render(); }
+  else if (action === "delete-tournament") { deleteTournament(t.id); }
+  else if (action === "open-edit-settings") { ui.editLevelNames = [...(t.levelNames || [])]; ui.screen = "editSettings"; render(); }
+  else if (action === "cancel-edit-settings") { ui.screen = "detail"; render(); }
+  else if (action === "add-level-edit") {
+    const inp = document.getElementById("lvl-input-edit");
+    const v = inp.value.trim();
+    if (v && !ui.editLevelNames.includes(v)) { ui.editLevelNames.push(v); refreshLevelsEditor(ui.editLevelNames, "edit"); }
+    else inp.value = "";
+  }
+  else if (action === "remove-level-edit") {
+    ui.editLevelNames = ui.editLevelNames.filter((l) => l !== el.dataset.level);
+    refreshLevelsEditor(ui.editLevelNames, "edit");
+  }
+  else if (action === "save-edit-settings") {
+    const et = activeT();
+    const locked = et.status !== "setup";
+    const updates = {
+      name: document.getElementById("e-name").value.trim() || "Tournament",
+      timerEnabled: document.getElementById("e-timer").checked,
+      defaultMinutes: Number(document.getElementById("e-minutes").value) || 15,
+      levelNames: [...ui.editLevelNames],
+      advanceCount: Number(document.getElementById("e-advance").value) || 0,
+      thirdPlaceMatch: document.getElementById("e-third") ? document.getElementById("e-third").checked : !!et.thirdPlaceMatch,
+      // Editable any time (not just before matches exist): it only changes
+      // how future matches are generated.
+      catchUpLatecomers: document.getElementById("e-catchup") ? document.getElementById("e-catchup").checked : et.catchUpLatecomers !== false,
+    };
+    // Mixed / grouped women's doubles only change how FUTURE matches are
+    // paired, so they stay editable mid-session. (When nothing is locked yet,
+    // the block below reads them together with format/open-play.)
+    if (locked && et.fixedPartners === false && et.matchType === "doubles") {
+      const mixedOn = document.getElementById("e-mixed").checked;
+      const groupOn = document.getElementById("e-groupwomen").checked;
+      updates.requireMixedDoubles = mixedOn && !groupOn;
+      updates.groupWomensDoubles = groupOn;
+    }
+    if (!locked) {
+      const format = document.getElementById("e-format").value;
+      const matchType = document.getElementById("e-matchtype").value;
+      const openPlay = format === "round_robin" && document.getElementById("e-openplay").checked;
+      updates.format = format;
+      updates.matchType = matchType;
+      updates.scoringMode = document.getElementById("e-scoring").value;
+      updates.fixedPartners = !openPlay;
+      updates.requireMixedDoubles = openPlay && matchType === "doubles" && document.getElementById("e-mixed").checked && !document.getElementById("e-groupwomen").checked;
+      updates.groupWomensDoubles = openPlay && matchType === "doubles" && document.getElementById("e-groupwomen").checked;
+      updates.numPools = (format === "round_robin" && !openPlay) ? Math.max(1, Number(document.getElementById("e-pools").value) || 1) : 1;
+      if (format === "single_elim" || openPlay) updates.advanceCount = 0;
+    }
+    if (et.fixedPartners === false && et.catchUpLatecomers !== false && updates.catchUpLatecomers === false) {
+      forgiveCatchUpDeficits(et);
+    }
+    updateTournament(et, updates);
+  }
+  else if (action === "set-tab") { ui.tab = el.dataset.tab; render(); }
+  else if (action === "print") { window.print(); }
+  else if (action === "export") {
+    const blob = new Blob([JSON.stringify(store, null, 2)], { type: "application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = "tournament-backup.json"; a.click();
+  }
+  else if (action === "add-team") {
+    const p1 = document.getElementById("tm-p1").value.trim();
+    if (!p1) return;
+    const p2 = t.matchType === "doubles" ? document.getElementById("tm-p2").value.trim() : "";
+    if (t.matchType === "doubles" && !p2) return;
+    const name = document.getElementById("tm-name").value.trim() || (p2 ? p1 + " / " + p2 : p1);
+    addTeam(t, { name, player1: p1, player2: p2, gender: document.getElementById("tm-gender").value, level: document.getElementById("tm-level").value.trim(), pool: t.numPools > 1 ? Number(document.getElementById("tm-pool").value) : 1 });
+  }
+  else if (action === "remove-team") { removeTeam(t, el.dataset.id); }
+  else if (action === "add-player") {
+    const name = document.getElementById("pl-name").value.trim();
+    if (!name) return;
+    addPlayer(t, { name, gender: document.getElementById("pl-gender").value, level: document.getElementById("pl-level").value.trim() });
+  }
+  else if (action === "remove-player") { removePlayer(t, el.dataset.id); }
+  else if (action === "generate-openplay-rounds") {
+    const n = Math.max(1, Number(document.getElementById("pl-rounds").value) || 1);
+    generateOpenPlayRounds(t, n);
+  }
+  else if (action === "auto-assign-pools") { autoAssignPools(t); }
+  else if (action === "randomize-seeding") { randomizeSeeding(t); }
+  else if (action === "generate-matches") { generateMatches(t); }
+  else if (action === "generate-playoffs") { generatePlayoffs(t); }
+  else if (action === "add-court") {
+    const label = document.getElementById("ct-label").value.trim();
+    if (!label) return;
+    addCourt(t, { label, genderRestriction: document.getElementById("ct-gender").value, matchType: document.getElementById("ct-matchtype").value, levelRestriction: document.getElementById("ct-level").value.trim() });
+  }
+  else if (action === "edit-court") { ui.editingCourtId = el.dataset.id; render(); }
+  else if (action === "cancel-court-edit") { ui.editingCourtId = null; render(); }
+  else if (action === "remove-court") { removeCourt(t, el.dataset.id); }
+  else if (action === "auto-assign-courts") { assignCourts(t, () => true); saveStore(); render(); }
+  else if (action === "start-match") { startMatch(t, t.matches.find((m) => m.id === el.dataset.id)); }
+  else if (action === "edit-match") {
+    const m = t.matches.find((x) => x.id === el.dataset.id);
+    if (t.scoringMode === "score") ui.scoreDrafts[m.id] = { s1: m.score1 ?? "", s2: m.score2 ?? "" };
+    ui.editingMatchId = m.id; render();
+  }
+  else if (action === "submit-score") { submitResult(t, t.matches.find((m) => m.id === el.dataset.id)); }
+  else if (action === "submit-wl") { submitResult(t, t.matches.find((m) => m.id === el.dataset.id), el.dataset.winner); }
+  else if (action === "begin-swap") { beginSwap(t, t.matches.find((m) => m.id === el.dataset.id), el.dataset.side); }
+  else if (action === "save-swap") { saveSwap(t); }
+  else if (action === "cancel-swap") { ui.swappingSide = null; render(); }
+});
+
+document.addEventListener("input", (e) => {
+  if (e.target.dataset.role === "s1" || e.target.dataset.role === "s2") {
+    const id = e.target.dataset.id;
+    ui.scoreDrafts[id] = ui.scoreDrafts[id] || {};
+    ui.scoreDrafts[id][e.target.dataset.role] = e.target.value;
+  }
+});
+document.addEventListener("change", (e) => {
+  if (e.target.dataset.action === "set-court") {
+    const t = activeT();
+    assignCourtManually(t, t.matches.find((m) => m.id === e.target.dataset.id), e.target.value);
+  }
+  else if (e.target.dataset.role === "swap-p1" || e.target.dataset.role === "swap-p2") {
+    ui.swapDraft[e.target.dataset.role === "swap-p1" ? "p1" : "p2"] = e.target.value;
+    render();
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.id && e.target.id.indexOf("lvl-input-") === 0) {
+    e.preventDefault();
+    const ctx = e.target.id.replace("lvl-input-", "");
+    document.querySelector(`[data-action="add-level-${ctx}"]`).click();
+  }
+});
+function wireSetupFormToggles() {
+  ["f", "e"].forEach((prefix) => {
+    const formatSel = document.getElementById(prefix + "-format");
+    const matchtypeSel = document.getElementById(prefix + "-matchtype");
+    const openplayChk = document.getElementById(prefix + "-openplay");
+    const mixedChk = document.getElementById(prefix + "-mixed");
+    const groupWomenChk = document.getElementById(prefix + "-groupwomen");
+    const advanceSel = document.getElementById(prefix + "-advance");
+    const thirdWrap = document.getElementById(prefix + "-thirdwrap");
+    const catchWrap = document.getElementById(prefix + "-catchupwrap");
+    if (!formatSel || !matchtypeSel || !openplayChk) return;
+    function update() {
+      const isRR = formatSel.value === "round_robin";
+      document.getElementById(prefix + "-openplaywrap").style.display = isRR ? "" : "none";
+      document.getElementById(prefix + "-poolswrap").style.display = (isRR && !openplayChk.checked) ? "" : "none";
+      document.getElementById(prefix + "-mixedwrap").style.display = (isRR && openplayChk.checked && matchtypeSel.value === "doubles") ? "" : "none";
+      if (catchWrap) catchWrap.style.display = (isRR && openplayChk.checked) ? "" : "none";
+      if (thirdWrap) {
+        const isSingleElim = formatSel.value === "single_elim";
+        const isPlayoffsEnabled = isRR && !openplayChk.checked && advanceSel && Number(advanceSel.value) >= 1;
+        thirdWrap.style.display = (isSingleElim || isPlayoffsEnabled) ? "" : "none";
+      }
+    }
+    formatSel.addEventListener("change", update);
+    matchtypeSel.addEventListener("change", update);
+    openplayChk.addEventListener("change", update);
+    if (advanceSel) advanceSel.addEventListener("change", update);
+    if (mixedChk && groupWomenChk) {
+      mixedChk.addEventListener("change", () => { if (mixedChk.checked) groupWomenChk.checked = false; });
+      groupWomenChk.addEventListener("change", () => { if (groupWomenChk.checked) mixedChk.checked = false; });
+    }
+    update();
+  });
+}
+
+function wireImportInput() {
+  const inp = document.getElementById("importFile");
+  if (!inp) return;
+  inp.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (data && data.tournaments) { store = data; saveStore(); render(); alert("Backup imported."); }
+        else alert("That file doesn't look like a valid backup.");
+      } catch { alert("Couldn't read that file."); }
+    };
+    reader.readAsText(file);
+  });
+}
+
+// Re-render every second while any match timer is running, so countdowns tick.
+setInterval(() => {
+  const t = ui.screen === "detail" ? activeT() : null;
+  if (t && t.timerEnabled && t.matches.some((m) => m.status === "in_progress")) render();
+}, 1000);
+
+render();
+</script>
+<script>
+// When served from the web, save the app on the device so it opens with no
+// signal. Skipped when the file is opened directly from storage.
+if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
