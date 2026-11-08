@@ -321,7 +321,7 @@ export function generateOpenPlayRound({ players, matchType, gamesPlayed, pastPar
 export function generateBestOpenPlayRound({
   rankedPlayers, activeCount, genderMode, matchType, gamesPlayed,
   pastPartners, pastOpponents, genderById = {},
-  requireMixedForWomen = false, groupWomensDoubles = false, outerAttempts = 30,
+  requireMixedForWomen = false, groupWomensDoubles = false, outerAttempts = 30, catchUp = true,
 }) {
   function tieShuffledOrder() {
     const groups = new Map();
@@ -375,7 +375,7 @@ export function generateBestOpenPlayRound({
   // players who are ahead rotate out and the stragglers catch up. Always
   // runs at least one match. Skipped for grouped women's doubles, where
   // some players can be deliberately held out for long stretches.
-  if (genderMode !== "grouped") {
+  if (catchUp && genderMode !== "grouped") {
     const perMatch = matchType === "doubles" ? 4 : 2;
     const minAll = Math.min(...rankedPlayers.map((p) => gamesPlayed[p.id] || 0));
     while (count > perMatch) {

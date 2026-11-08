@@ -100,6 +100,7 @@ export default function Tournament({ session }) {
   const [fixedPartners, setFixedPartners] = useState(true);
   const [requireMixedDoubles, setRequireMixedDoubles] = useState(false);
   const [groupWomensDoubles, setGroupWomensDoubles] = useState(false);
+  const [catchUpLatecomers, setCatchUpLatecomers] = useState(true);
   const [levelNames, setLevelNames] = useState([]);
   const [newLevelInput, setNewLevelInput] = useState("");
   const [players, setPlayers] = useState([]);
@@ -198,6 +199,7 @@ export default function Tournament({ session }) {
         fixed_partners: format === "round_robin" ? fixedPartners : true,
         require_mixed_doubles: format === "round_robin" && !fixedPartners && matchType === "doubles" ? requireMixedDoubles && !groupWomensDoubles : false,
         group_womens_doubles: format === "round_robin" && !fixedPartners && matchType === "doubles" ? groupWomensDoubles : false,
+        catch_up_latecomers: catchUpLatecomers,
         level_names: levelNames,
         third_place_match: format === "single_elim" || (format === "round_robin" && fixedPartners && Number(advanceCount) >= 1) ? thirdPlaceMatchOpt : false,
       })
@@ -214,6 +216,7 @@ export default function Tournament({ session }) {
       setFixedPartners(true);
       setRequireMixedDoubles(false);
       setGroupWomensDoubles(false);
+      setCatchUpLatecomers(true);
       setLevelNames([]);
       setThirdPlaceMatchOpt(false);
       await loadAll();
@@ -244,7 +247,27 @@ export default function Tournament({ session }) {
       updates.require_mixed_doubles = requireMixedDoubles && !groupWomensDoubles;
       updates.group_womens_doubles = groupWomensDoubles;
     }
+    if (tournament.fixed_partners === false) {
+      updates.catch_up_latecomers = catchUpLatecomers;
+    }
     updates.level_names = levelNames;
+    // Switching catch-up OFF: forgive any deficit of 2+ games right now (e.g.
+    // latecomers part-way through catching up), per pool, so they continue
+    // level with the pack instead of the join-time baseline double-counting
+    // games they've since played and benching them.
+    if (tournament.fixed_partners === false && tournament.catch_up_latecomers !== false && !catchUpLatecomers) {
+      const tById = Object.fromEntries(teams.map((t) => [t.id, t]));
+      const hist = buildOpenPlayHistory(matches, tById);
+      const activeNow = players.filter((p) => p.active);
+      for (const pool of [...new Set(activeNow.map((p) => p.pool_number || 1))]) {
+        const group = activeNow.filter((p) => (p.pool_number || 1) === pool);
+        const maxG = Math.max(0, ...group.map((p) => hist.gamesPlayed[p.id] || 0));
+        for (const p of group) {
+          const deficit = maxG - (hist.gamesPlayed[p.id] || 0);
+          await supabase.from("tournament_players").update({ join_baseline: deficit >= 2 ? deficit : 0 }).eq("id", p.id);
+        }
+      }
+    }
     await supabase.from("tournaments").update(updates).eq("id", tournament.id);
     setEditingSettings(false);
     await loadAll();
@@ -270,6 +293,7 @@ export default function Tournament({ session }) {
     setFixedPartners(tournament.fixed_partners !== false);
     setRequireMixedDoubles(!!tournament.require_mixed_doubles);
     setGroupWomensDoubles(!!tournament.group_womens_doubles);
+    setCatchUpLatecomers(tournament.catch_up_latecomers !== false);
     setLevelNames(tournament.level_names || []);
     setThirdPlaceMatchOpt(!!tournament.third_place_match);
     setEditingSettings(true);
@@ -375,12 +399,25 @@ export default function Tournament({ session }) {
   async function addPlayer(e) {
     e.preventDefault();
     if (!playerName.trim()) return;
+    const poolForNew = tournament.num_pools > 1 ? Number(playerPool) : 1;
+    // Baseline = the lowest games-played among players already in this pool
+    // right now. Only used when catch-up is turned off, so a latecomer
+    // enters level with the pack instead of at 0.
+    const tById = Object.fromEntries(teams.map((t) => [t.id, t]));
+    const hist = buildOpenPlayHistory(matches, tById);
+    // Effective games (played + their own baseline), so a second latecomer
+    // isn't measured against the first one's 0 real games.
+    const peers = players.filter((p) => p.active && (p.pool_number || 1) === poolForNew);
+    const baseline = matches.length > 0 && peers.length > 0
+      ? Math.min(...peers.map((p) => (hist.gamesPlayed[p.id] || 0) + (p.join_baseline || 0)))
+      : 0;
     await supabase.from("tournament_players").insert({
       tournament_id: tournament.id,
       name: playerName.trim(),
       gender: playerGender || null,
       level: playerLevel.trim() || null,
-      pool_number: tournament.num_pools > 1 ? Number(playerPool) : 1,
+      pool_number: poolForNew,
+      join_baseline: baseline,
     });
     setPlayerName(""); setPlayerGender(""); setPlayerLevel(""); setPlayerPool(1);
     await loadAll();
@@ -586,6 +623,12 @@ export default function Tournament({ session }) {
       roundOffset += 1;
       const roundNumber = maxExistingRound + roundOffset;
       const history = buildOpenPlayHistory(workingMatches, workingTeamsById);
+      const catchUp = tournament.catch_up_latecomers !== false;
+      // With catch-up off, a latecomer is treated as if they'd already played
+      // as many games as the lowest player when they joined.
+      const effectiveGames = catchUp
+        ? history.gamesPlayed
+        : Object.fromEntries(players.map((p) => [p.id, (history.gamesPlayed[p.id] || 0) + (p.join_baseline || 0)]));
       let matchesThisRound = 0;
       let slotsLeftThisRound = Math.min(maxConcurrent, matchesRemaining);
 
@@ -598,7 +641,7 @@ export default function Tournament({ session }) {
         if (poolPlayers.length < perMatch) continue;
 
         const ranked = [...poolPlayers].sort(
-          (a, b) => (history.gamesPlayed[a.id] || 0) - (history.gamesPlayed[b.id] || 0)
+          (a, b) => (effectiveGames[a.id] || 0) - (effectiveGames[b.id] || 0)
         );
         const maxPoolMatches = Math.floor(ranked.length / perMatch);
         const matchesForThisPool = Math.min(maxPoolMatches, slotsLeftThisRound);
@@ -614,12 +657,13 @@ export default function Tournament({ session }) {
           activeCount,
           genderMode,
           matchType: tournament.match_type,
-          gamesPlayed: history.gamesPlayed,
+          gamesPlayed: effectiveGames,
           pastPartners: history.pastPartners,
           pastOpponents: history.pastOpponents,
           genderById: Object.fromEntries(players.map((p) => [p.id, p.gender])),
           requireMixedForWomen: !!tournament.require_mixed_doubles,
           groupWomensDoubles: !!tournament.group_womens_doubles,
+          catchUp,
         });
         // Safety cap — generateOpenPlayRound should already produce at
         // most matchesForThisPool matches from a pool sized exactly for
@@ -1242,6 +1286,20 @@ export default function Tournament({ session }) {
                       No fixed teams. Add individual players; every match pairs people up fresh so everyone gets a chance to partner with — and play against — everyone else.
                     </div>
 
+                    {!fixedPartners && (
+                      <>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                          <input type="checkbox" checked={catchUpLatecomers} onChange={(e) => setCatchUpLatecomers(e.target.checked)} />
+                          Catch up latecomers
+                        </label>
+                        <div className="helper-text">
+                          {catchUpLatecomers
+                            ? "Players who join late get extra matches (others sit out more) until they match everyone else's games played."
+                            : "Latecomers join level with the lowest active player and play the normal rotation — no extra matches to make up."}
+                        </div>
+                      </>
+                    )}
+
                     {!fixedPartners && matchType === "doubles" && (
                       <>
                         <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
@@ -1363,6 +1421,20 @@ export default function Tournament({ session }) {
                     />
                     Open play — rotate partners/opponents each match
                   </label>
+
+                  {!fixedPartners && (
+                    <>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                        <input type="checkbox" checked={catchUpLatecomers} onChange={(e) => setCatchUpLatecomers(e.target.checked)} />
+                        Catch up latecomers
+                      </label>
+                      <div className="helper-text">
+                        {catchUpLatecomers
+                          ? "Players who join late get extra matches (others sit out more) until they match everyone else's games played."
+                          : "Latecomers join level with the lowest active player and play the normal rotation — no extra matches to make up."}
+                      </div>
+                    </>
+                  )}
 
                   {!fixedPartners && matchType === "doubles" && (
                     <>
