@@ -340,26 +340,54 @@ export function generateBestOpenPlayRound({
     });
   }
 
-  let best = null;
-  for (let attempt = 0; attempt < outerAttempts; attempt++) {
-    const order = attempt === 0 ? rankedPlayers : tieShuffledOrder();
-    const pool = selectRoundPool(order, activeCount, genderMode, matchType);
-    if (pool.length < (matchType === "doubles" ? 4 : 2)) continue;
-    const result = generateOpenPlayRound({
-      players: pool, matchType, gamesPlayed, pastPartners, pastOpponents,
-      genderById, requireMixedForWomen, groupWomensDoubles, maxAttempts: 40,
-    });
-    const score = result.score ?? 0;
-    if (
-      !best ||
-      result.matches.length > best.matches.length ||
-      (result.matches.length === best.matches.length && score < best.score)
-    ) {
-      best = { ...result, score, pool };
+  function bestForCount(count) {
+    let best = null;
+    for (let attempt = 0; attempt < outerAttempts; attempt++) {
+      const order = attempt === 0 ? rankedPlayers : tieShuffledOrder();
+      const pool = selectRoundPool(order, count, genderMode, matchType);
+      if (pool.length < (matchType === "doubles" ? 4 : 2)) continue;
+      const result = generateOpenPlayRound({
+        players: pool, matchType, gamesPlayed, pastPartners, pastOpponents,
+        genderById, requireMixedForWomen, groupWomensDoubles, maxAttempts: 40,
+      });
+      const score = result.score ?? 0;
+      if (
+        !best ||
+        result.matches.length > best.matches.length ||
+        (result.matches.length === best.matches.length && score < best.score)
+      ) {
+        best = { ...result, score, pool };
+      }
+      if (best.score === 0 && best.matches.length > 0) break;
     }
-    if (best.score === 0 && best.matches.length > 0) break;
+    return best || { matches: [], sitOut: [], score: 0, pool: [] };
   }
-  return best || { matches: [], sitOut: [], score: 0, pool: [] };
+
+  let count = activeCount;
+  let result = bestForCount(count);
+
+  // Catch-up: a player can only play once per time-slot, so when several
+  // matches run at once and everyone fits (e.g. 8 players on 2 courts), a
+  // latecomer gains exactly one game per slot — the same as everyone else —
+  // and never closes the gap. If playing this many matches would put
+  // someone who's AHEAD on court while another player is 2+ games behind,
+  // run one fewer concurrent match instead (leaving a court idle), so the
+  // players who are ahead rotate out and the stragglers catch up. Always
+  // runs at least one match. Skipped for grouped women's doubles, where
+  // some players can be deliberately held out for long stretches.
+  if (genderMode !== "grouped") {
+    const perMatch = matchType === "doubles" ? 4 : 2;
+    const minAll = Math.min(...rankedPlayers.map((p) => gamesPlayed[p.id] || 0));
+    while (count > perMatch) {
+      const ids = result.matches.flatMap((m) => [...m.team1, ...m.team2]);
+      if (ids.length === 0) break;
+      const maxPlaying = Math.max(...ids.map((id) => gamesPlayed[id] || 0));
+      if (maxPlaying - minAll <= 1) break;
+      count -= perMatch;
+      result = bestForCount(count);
+    }
+  }
+  return result;
 }
 
 // Rebuilds per-player games-played counts and the sets of past
