@@ -687,3 +687,55 @@ export function computeStandings(teams, matches) {
 
   return orderedGroups.flat();
 }
+
+// ============================================================
+// Court planning
+// ============================================================
+
+// Orders one time-slot's matches so pools take turns: every pool's first
+// match, then every pool's second match, and so on. Without this, handing
+// out courts in plain list order gives them all to pool 1 and leaves the
+// later pools with none.
+export function interleaveByPool(matches, getPool, getIndex) {
+  const byPool = new Map();
+  for (const m of matches) {
+    const p = getPool(m);
+    if (!byPool.has(p)) byPool.set(p, []);
+    byPool.get(p).push(m);
+  }
+  const pools = [...byPool.keys()].sort((a, b) => a - b);
+  pools.forEach((p) => byPool.get(p).sort((a, b) => getIndex(a) - getIndex(b)));
+  const longest = Math.max(0, ...pools.map((p) => byPool.get(p).length));
+  const out = [];
+  for (let i = 0; i < longest; i++) {
+    for (const p of pools) {
+      const m = byPool.get(p)[i];
+      if (m) out.push(m);
+    }
+  }
+  return out;
+}
+
+// Plans a court for EVERY match in one time-slot (a round). If there are
+// more matches than courts, courts are reused — those matches simply play
+// one after another on that court. Each match gets the least-used court
+// that its gender / level / singles-doubles restrictions allow, so load
+// stays even. `alreadyAssigned` holds courts of matches in this slot that
+// already have one (e.g. set by hand), counted as used. Returns a
+// Map(matchId -> courtId); matches no court can host are left out.
+export function planCourtAssignments({ matches, courts, isCompatible, getPool, getIndex, alreadyAssigned = [] }) {
+  const load = new Map(courts.map((c) => [c.id, 0]));
+  for (const courtId of alreadyAssigned) {
+    if (load.has(courtId)) load.set(courtId, load.get(courtId) + 1);
+  }
+  const plan = new Map();
+  for (const m of interleaveByPool(matches, getPool, getIndex)) {
+    const options = courts.filter((c) => isCompatible(c, m));
+    if (options.length === 0) continue;
+    let best = options[0];
+    for (const c of options) if (load.get(c.id) < load.get(best.id)) best = c;
+    load.set(best.id, load.get(best.id) + 1);
+    plan.set(m.id, best.id);
+  }
+  return plan;
+}

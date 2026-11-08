@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Plus, Trophy, Play, X, Pencil, Check, Download } from "lucide-react";
 import { supabase } from "../supabaseClient";
-import { generateRoundRobin, buildBracketSkeleton, computeStandings, roundLabel, generateBestOpenPlayRound, computePlayerStandings, buildOpenPlayHistory } from "../lib/tournament";
+import { generateRoundRobin, buildBracketSkeleton, computeStandings, roundLabel, generateBestOpenPlayRound, computePlayerStandings, buildOpenPlayHistory, planCourtAssignments, interleaveByPool } from "../lib/tournament";
 import jsPDF from "jspdf";
 
 function LevelsEditor({ levelNames, setLevelNames, newLevelInput, setNewLevelInput }) {
@@ -458,21 +458,40 @@ export default function Tournament({ session }) {
     return true;
   }
 
+  // Gives EVERY match in each time-slot a court. When a round has more
+  // matches than courts (e.g. two pools sharing two courts), courts are
+  // reused — those matches play one after another — and pools take turns
+  // so no pool is left without courts. Matches that already have a court
+  // (set by hand) are kept and counted as using it.
   async function assignCourts(freshMatches, freshCourts, freshTeams) {
     if (freshCourts.length === 0) return;
     const teamsById = Object.fromEntries(freshTeams.map((t) => [t.id, t]));
     const slots = [...new Set(freshMatches.map((m) => `${m.stage}-${m.round_number}`))];
     for (const slot of slots) {
-      const roundMatches = freshMatches.filter((m) => `${m.stage}-${m.round_number}` === slot && m.status !== "bye" && m.team1_id && m.team2_id);
-      const used = new Set();
-      for (const m of roundMatches) {
-        const compatible = freshCourts.filter((c) => !used.has(c.id) && courtCompatible(c, m, teamsById));
-        if (compatible.length > 0) {
-          used.add(compatible[0].id);
-          await supabase.from("tournament_matches").update({ court_id: compatible[0].id }).eq("id", m.id);
-        }
+      const inSlot = freshMatches.filter(
+        (m) => `${m.stage}-${m.round_number}` === slot && m.status !== "bye" && m.team1_id && m.team2_id
+      );
+      const open = inSlot.filter((m) => !m.court_id && m.status !== "completed");
+      const plan = planCourtAssignments({
+        matches: open,
+        courts: freshCourts,
+        isCompatible: (c, m) => courtCompatible(c, m, teamsById),
+        getPool: (m) => m.pool_number || 1,
+        getIndex: (m) => m.match_index,
+        alreadyAssigned: inSlot.filter((m) => m.court_id).map((m) => m.court_id),
+      });
+      for (const [matchId, courtId] of plan) {
+        await supabase.from("tournament_matches").update({ court_id: courtId }).eq("id", matchId);
       }
     }
+  }
+
+  // For a tournament that's already been generated: fills in a court for
+  // every match that doesn't have one, leaving hand-picked courts and
+  // finished matches alone.
+  async function autoAssignMissingCourts() {
+    await assignCourts(matches, courts, teams);
+    await loadAll();
   }
 
   // Shared by generateMatches (single_elim tournaments) and
@@ -926,6 +945,21 @@ export default function Tournament({ session }) {
     await loadAll();
   }
 
+  // When a round has more matches than courts, several share a court and
+  // play one after another. Returns that match's turn so the card can say
+  // so (null when the court is used once that round).
+  function courtTurn(m) {
+    if (!m.court_id) return null;
+    const slot = matches.filter(
+      (x) => x.stage === m.stage && x.round_number === m.round_number && x.status !== "bye" && x.team1_id && x.team2_id
+    );
+    const order = interleaveByPool(slot, (x) => x.pool_number || 1, (x) => x.match_index);
+    const sameCourt = order.filter((x) => x.court_id === m.court_id);
+    if (sameCourt.length < 2) return null;
+    return { turn: sameCourt.findIndex((x) => x.id === m.id) + 1, of: sameCourt.length };
+  }
+  const ordinal = (n) => `${n}${["th", "st", "nd", "rd"][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10 < 4 ? n % 10 : 0]}`;
+
   function beginEditMatch(m) {
     if (tournament.scoring_mode === "score") {
       setScoreDrafts((d) => ({ ...d, [m.id]: { s1: m.team1_score ?? "", s2: m.team2_score ?? "" } }));
@@ -1164,18 +1198,24 @@ export default function Tournament({ session }) {
         )}
 
         <div className="tmatch-meta">
-          {isHost ? (
-            <select
-              value={m.court_id || ""}
-              onChange={(e) => assignCourtManually(m.id, e.target.value)}
-              style={{ fontSize: 11, border: "1px solid var(--line)", borderRadius: 6, padding: "2px 4px", background: "var(--white)" }}
-            >
-              <option value="">No court</option>
-              {courts.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-            </select>
-          ) : (
-            <span>{court ? court.label : "No court assigned"}</span>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            {isHost ? (
+              <select
+                value={m.court_id || ""}
+                onChange={(e) => assignCourtManually(m.id, e.target.value)}
+                style={{ fontSize: 11, border: "1px solid var(--line)", borderRadius: 6, padding: "2px 4px", background: "var(--white)" }}
+              >
+                <option value="">No court</option>
+                {courts.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+            ) : (
+              <span>{court ? court.label : "No court assigned"}</span>
+            )}
+            {(() => {
+              const turn = courtTurn(m);
+              return turn ? <span style={{ fontSize: 10, color: "var(--fade)" }}>{ordinal(turn.turn)} of {turn.of} on this court</span> : null;
+            })()}
+          </div>
           {tournament.timer_enabled && <MatchTimer match={m} />}
         </div>
       </div>
@@ -1798,7 +1838,7 @@ export default function Tournament({ session }) {
                           Cancel
                         </button>
                       )}
-                      <button className="btn btn-primary" style={{ flex: editingCourtId ? 2 : 1, borderRadius: 14 }} type="submit">
+                      <button className="btn btn-primary" style={{ flex: editingCourtId ? 2 : 1, borderRadius: 14, padding: "13px 0", fontSize: 14 }} type="submit">
                         {editingCourtId ? "Save changes" : (<><Plus size={14} style={{ verticalAlign: -2 }} /> Add court</>)}
                       </button>
                     </div>
@@ -1828,6 +1868,15 @@ export default function Tournament({ session }) {
 
             {tab === "matches" && (
               <div className="body-scroll">
+                {isHost && courts.length > 0 && matches.some((m) => !m.court_id && m.status !== "bye" && m.status !== "completed" && m.team1_id && m.team2_id) && (
+                  <div style={{ padding: "14px 20px 0" }}>
+                    <button className="btn btn-accent btn-block" onClick={autoAssignMissingCourts}>
+                      Auto-assign courts
+                      {` (${matches.filter((m) => !m.court_id && m.status !== "bye" && m.status !== "completed" && m.team1_id && m.team2_id).length} without one)`}
+                    </button>
+                    <div className="helper-text">Matches in a round that outnumber your courts share them and play one after another. Courts you picked by hand are kept.</div>
+                  </div>
+                )}
                 {matches.length > 0 && (
                   <div style={{ padding: "14px 20px 0" }}>
                     <button
