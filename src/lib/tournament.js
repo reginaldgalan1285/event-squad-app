@@ -340,6 +340,23 @@ export function generateBestOpenPlayRound({
     });
   }
 
+  // In mixed-doubles mode, an all-male pair is something to avoid when it's
+  // avoidable — but only by choosing among players who are TIED on games
+  // played (this helper only ever shuffles ties), so fairness is untouched:
+  // it never puts someone with more games on court just to include a woman.
+  // When fairness itself dictates an all-male pair (e.g. few women, or the
+  // women are ahead on games), every candidate has it and nothing changes.
+  function malePairPenalty(matches) {
+    if (genderMode !== "mixed") return 0;
+    let n = 0;
+    for (const m of matches) {
+      for (const team of [m.team1, m.team2]) {
+        if (team.length === 2 && !team.some((id) => genderById[id] === "women")) n++;
+      }
+    }
+    return n * 5000;
+  }
+
   function bestForCount(count) {
     let best = null;
     for (let attempt = 0; attempt < outerAttempts; attempt++) {
@@ -350,7 +367,7 @@ export function generateBestOpenPlayRound({
         players: pool, matchType, gamesPlayed, pastPartners, pastOpponents,
         genderById, requireMixedForWomen, groupWomensDoubles, maxAttempts: 40,
       });
-      const score = result.score ?? 0;
+      const score = (result.score ?? 0) + malePairPenalty(result.matches);
       if (
         !best ||
         result.matches.length > best.matches.length ||
